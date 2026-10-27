@@ -20,7 +20,7 @@ The front button is **A**, the side button is **B**.
 | Library | A: open · B: next | B: previous |
 | Reading (playing) | A: pause · B: faster | A: library · B: slower |
 | Reading (paused) | A: play · B: back a sentence | A: library · B: forward a sentence |
-| Add books | A: done | |
+| Add books | A or B: done (or tap **Done** on the page) | |
 | Anywhere | | A + B: flip the screen |
 
 ## Build and flash
@@ -45,7 +45,7 @@ Run the reading engine's tests on your computer (no stick needed):
 2. Scan the QR code with your phone to join the `SpeedReader-XXXX` network (or type the password shown). Your phone may warn that there's no internet; that's expected.
 3. Scan the second QR code, or open `http://192.168.4.1`.
 4. Pick EPUB or TXT files. You can remove books from the same page.
-5. Press A on the stick when you're done.
+5. Tap **Done, back to reading** on the page, or press either button on the stick. The book you just added is selected in the library, so press A to open it.
 
 Books are stored as plain text in the stick's flash (about 4.9 MB, roughly 8 to 10 novels). Only Latin-alphabet text is supported: accents are dropped and other scripts aren't shown. EPUBs with DRM can't be read.
 

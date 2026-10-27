@@ -18,5 +18,9 @@ bool phoneJoined();
 const String& status();
 // True once after each change to the stored books.
 bool takeLibraryChanged();
+// True once after "Done" is pressed on the upload page.
+bool takeDoneRequested();
+// File name of the most recently added book, or empty.
+const String& lastAdded();
 
 } // namespace upload

@@ -98,6 +98,15 @@ void goToLibrary() {
     redraw = true;
 }
 
+void leaveUpload() {
+    const String added = upload::lastAdded();
+    upload::end();
+    goToLibrary();
+    // Land on the book that was just added, ready to open with A.
+    for (size_t i = 0; i < books.size(); ++i)
+        if (books[i].name == added) selected = i;
+}
+
 void openSelected() {
     if (selected < books.size()) {
         openBook(books[selected].name);
@@ -149,10 +158,7 @@ void onAClick() {
             if (!reader.playing()) saveProgress();
         }
         break;
-    case Mode::Upload:
-        upload::end();
-        goToLibrary();
-        break;
+    case Mode::Upload: leaveUpload(); break;
     case Mode::Message: goToLibrary(); break;
     }
     redraw = true;
@@ -169,7 +175,8 @@ void onBClick() {
         if (reader.playing()) reader.adjustWpm(+1);
         else reader.previousSentence();
         break;
-    default: return;
+    case Mode::Upload: leaveUpload(); break;
+    case Mode::Message: goToLibrary(); break;
     }
     redraw = true;
 }
@@ -306,6 +313,11 @@ void loop() {
     case Mode::Upload: {
         upload::loop();
         if (upload::takeLibraryChanged()) refreshBooks();
+        if (upload::takeDoneRequested()) {
+            leaveUpload();
+            redraw = true;
+            break;
+        }
         const bool joined = upload::phoneJoined();
         if (joined != uploadJoined || upload::status() != uploadStatus) {
             uploadJoined = joined;

@@ -119,7 +119,11 @@ void drawReader(const rsvp::Reader& reader, const String& title) {
         canvas.setTextColor(kDim);
         String t = title;
         if (t.endsWith(".txt")) t.remove(t.length() - 4);
-        canvas.drawString(fitText(t, kW - 40), 6, 8);
+        const String stats = String(static_cast<int>(reader.progress() * 100)) + "%  " + String(reader.wpm()) + "wpm";
+        canvas.setTextDatum(textdatum_t::top_right);
+        canvas.drawString(stats, kW - 28, 8);
+        canvas.setTextDatum(textdatum_t::top_left);
+        canvas.drawString(fitText(t, kW - 40 - canvas.textWidth(stats) - 6), 6, 8);
         drawBattery(kW - 4, 11);
     }
 
@@ -127,19 +131,20 @@ void drawReader(const rsvp::Reader& reader, const String& title) {
     drawWord(reader.display().c_str(), reader.pivot());
 
     canvas.setFont(&fonts::Font2);
+    if (!reader.playing()) {
+        // Paused: show what the buttons do instead of stats.
+        canvas.setTextDatum(textdatum_t::bottom_center);
+        canvas.setTextColor(reader.finished() ? kAccent : kDim);
+        canvas.drawString(reader.finished() ? "the end   A: read again" : "A play   B back   hold A: library",
+                          kW / 2, kH - 6);
+        canvas.pushSprite(0, 0);
+        return;
+    }
     canvas.setTextColor(kDim);
     canvas.setTextDatum(textdatum_t::bottom_left);
     canvas.drawString(String(reader.wpm()) + " wpm", 6, kH - 6);
     canvas.setTextDatum(textdatum_t::bottom_center);
-    if (reader.finished()) {
-        canvas.setTextColor(kAccent);
-        canvas.drawString("the end", kW / 2, kH - 6);
-        canvas.setTextColor(kDim);
-    } else if (!reader.playing()) {
-        canvas.drawString("paused", kW / 2, kH - 6);
-    } else {
-        canvas.drawString(String(static_cast<int>(reader.progress() * 100)) + "%", kW / 2, kH - 6);
-    }
+    canvas.drawString(String(static_cast<int>(reader.progress() * 100)) + "%", kW / 2, kH - 6);
     canvas.setTextDatum(textdatum_t::bottom_right);
     canvas.drawString(formatDuration(reader.secondsLeft()) + " left", kW - 6, kH - 6);
 
@@ -222,8 +227,12 @@ void drawUpload(const String& ssid, const String& password, const String& url, b
         canvas.drawString("in your browser", x, 68);
     }
 
-    canvas.setTextColor(status.isEmpty() ? kDim : kAccent);
-    canvas.drawString(status.isEmpty() ? "A: done" : fitText(status, kW - x - 4), x, 112);
+    if (!status.isEmpty()) {
+        canvas.setTextColor(kAccent);
+        canvas.drawString(fitText(status, kW - x - 4), x, 92);
+    }
+    canvas.setTextColor(kText);
+    canvas.drawString("Press A: done", x, 112);
 
     canvas.pushSprite(0, 0);
 }

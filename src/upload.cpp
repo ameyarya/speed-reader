@@ -14,7 +14,8 @@ namespace {
 constexpr size_t kReserveBytes = 32 * 1024;
 
 WebServer server(80);
-String ssid_, password_, status_;
+String ssid_, password_, status_, lastAdded_;
+bool doneRequested_ = false;
 bool libraryChanged_ = false;
 bool running_ = false;
 
@@ -112,6 +113,7 @@ void handleUploadDone() {
     }
     library::savePosition(uploadName, 0);  // a replaced book starts over
     status_ = "Added " + titleOf(uploadName);
+    lastAdded_ = uploadName;
     libraryChanged_ = true;
     server.send(200, "text/plain", uploadName);
 }
@@ -139,6 +141,8 @@ void begin() {
     ssid_ = String("SpeedReader-") + id;
     password_ = randomPassword();
     status_ = "";
+    lastAdded_ = "";
+    doneRequested_ = false;
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(ssid_.c_str(), password_.c_str());
@@ -147,6 +151,10 @@ void begin() {
     server.on("/api/books", HTTP_GET, handleBooks);
     server.on("/api/upload", HTTP_POST, handleUploadDone, handleUploadChunk);
     server.on("/api/delete", HTTP_POST, handleDelete);
+    server.on("/api/done", HTTP_POST, [] {
+        doneRequested_ = true;
+        server.send(200, "text/plain", "ok");
+    });
     server.onNotFound([] { server.sendHeader("Location", "/"); server.send(302); });
     server.begin();
     running_ = true;
@@ -169,6 +177,14 @@ const String& password() { return password_; }
 String url() { return "http://" + WiFi.softAPIP().toString(); }
 bool phoneJoined() { return WiFi.softAPgetStationNum() > 0; }
 const String& status() { return status_; }
+
+const String& lastAdded() { return lastAdded_; }
+
+bool takeDoneRequested() {
+    const bool done = doneRequested_;
+    doneRequested_ = false;
+    return done;
+}
 
 bool takeLibraryChanged() {
     const bool changed = libraryChanged_;

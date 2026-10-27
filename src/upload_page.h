@@ -36,6 +36,8 @@ static const char kUploadPage[] PROGMEM = R"HTML(<!doctype html>
   #books button { background:none; border:1px solid var(--line); color:var(--dim); border-radius:6px; padding:4px 10px; font-size:13px; }
   #books button:hover { color:var(--accent); border-color:var(--accent); }
   .empty { color:var(--dim); padding:10px 0; }
+  #done { display:block; width:100%; margin-top:28px; padding:14px; border:0; border-radius:10px; background:var(--accent); color:#fff; font-size:16px; font-weight:600; }
+  #done:disabled { opacity:.5; }
 </style>
 </head>
 <body>
@@ -52,6 +54,8 @@ static const char kUploadPage[] PROGMEM = R"HTML(<!doctype html>
 
   <h2><span>On the stick</span><span id="space"></span></h2>
   <ul id="books"><li class="empty">Loading...</li></ul>
+
+  <button id="done">Done, back to reading</button>
 </main>
 <script>
 const $ = (s) => document.querySelector(s);
@@ -278,6 +282,17 @@ const drop = $('#drop');
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addBooks([...e.dataTransfer.files]); };
+$('#done').onclick = async () => {
+  const btn = $('#done');
+  btn.disabled = true;
+  try {
+    await fetch('/api/done', { method: 'POST' });
+    btn.textContent = 'All set. Your book is on the stick.';
+  } catch {
+    btn.disabled = false;
+    btn.textContent = "Couldn't reach the stick. Press A on it instead.";
+  }
+};
 loadBooks();
 </script>
 </body>
