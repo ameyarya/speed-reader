@@ -127,6 +127,48 @@ static void testLongWordChunks() {
     CHECK(joined == "pneumonoultramicroscopicsilicovolcanoconiosis");
 }
 
+static void testChapters() {
+    const std::string M(1, kChapterMarker);
+    const std::string text = M + "Chapter One\nIt begins. Here.\n\n" + M + "The Caf\xC3\xA9\nNext part.\n\n" + M + "\nLast.";
+    Reader r;
+    r.open(text.data(), text.size(), 0);
+    CHECK(r.chapters().size() == 3);
+    CHECK(r.chapters()[0].title == "Chapter One");
+    CHECK(r.chapters()[1].title == "The Cafe");
+    CHECK(r.chapters()[2].title == "Chapter 3");  // untitled marker gets a number
+    CHECK(r.totalWords() == 6);                    // titles are not read
+    CHECK(r.display() == "It");
+    CHECK(r.currentChapter() == 0);
+
+    // Playing straight through never shows a title word.
+    r.setWpm(600);
+    r.play(0);
+    uint32_t t = 0;
+    std::string seen;
+    while (!r.finished() && t < 60000) {
+        if (r.tick(t += 10)) seen += r.display() + " ";
+    }
+    CHECK(seen == "begins. Here. Next part. Last. ");
+
+    r.goToChapter(1);
+    CHECK(r.display() == "Next");
+    CHECK(r.currentChapter() == 1);
+    CHECK(!r.finished());
+    r.previousSentence();  // already at a sentence start: back across the title into chapter one
+    CHECK(r.display() == "Here.");
+    CHECK(r.currentChapter() == 0);
+
+    // A saved position inside a title line resumes at that chapter's first word.
+    r.open(text.data(), text.size(), text.find("Caf"));
+    CHECK(r.display() == "Next");
+
+    // Books without markers have no chapters.
+    const std::string plain = "No chapters here.";
+    r.open(plain.data(), plain.size(), 0);
+    CHECK(r.chapters().empty());
+    CHECK(r.currentChapter() == -1);
+}
+
 static void testWpm() {
     Reader r;
     r.setWpm(5000);
@@ -146,6 +188,7 @@ int main() {
     testReaderPlayback();
     testReaderNavigation();
     testLongWordChunks();
+    testChapters();
     testWpm();
     if (failures) {
         std::printf("%d failure(s)\n", failures);

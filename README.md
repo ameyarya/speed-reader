@@ -7,6 +7,8 @@ A pocket speed reader for the **M5StickS3**. Books play one word at a time (RSVP
 - **Fixed focus letter.** Each word is placed so its recognition point (the red letter) sits on the tick marks. Long words shrink to fit; very long ones are shown in hyphenated pieces.
 - **Natural pacing.** Words get extra time for length, complexity (syllables, numbers, all-caps, URLs) and punctuation, with longer pauses at sentence and paragraph ends. Abbreviations like "Mr." and "e.g." don't count as sentence ends. Reading eases in over the first few words after you press play.
 - **100 to 1000 words per minute**, in steps of 25.
+- **Chapters.** Jump to any chapter from the menu. Chapters come from the EPUB's table of contents (or its headings), and from lines like "Chapter 3" in text files.
+- **Settings** for brightness, reading speed and text size (Small to Extra large).
 - **Resume everywhere.** Your place in each book and your speed are saved; the stick reopens the last book on boot.
 - **Add books over Wi-Fi.** The stick shows a QR code to join its network, then a second one for the upload page. EPUBs are converted to text in your browser, so it works without internet.
 - **Progress, time left and battery** on screen; the screen dims after a minute idle and the stick powers off after ten.
@@ -17,9 +19,12 @@ The front button is **A**, the side button is **B**.
 
 | Where | Press | Hold |
 |---|---|---|
-| Library | A: open · B: next | B: previous |
-| Reading (playing) | A: pause · B: faster | A: library · B: slower |
-| Reading (paused) | A: play · B: back a sentence | A: library · B: forward a sentence |
+| Any list (library, menu, chapters, settings) | A: choose · B: next | B: previous |
+| Reading (playing) | A: pause · B: faster | A: menu · B: slower |
+| Reading (paused) | A: play · B: back a sentence | A: menu · B: forward a sentence |
+| Menu | | A: back to reading |
+| Chapters | A: jump there | A: back to menu |
+| Settings | A: change the selected setting, then B: up, hold B: down, A: done | A: back |
 | Add books | A or B: done (or tap **Done** on the page) | |
 | Anywhere | | A + B: flip the screen |
 

@@ -1,9 +1,10 @@
 // Speed Reader for the M5StickS3: one word at a time, with the focus letter fixed in place.
 //
-// Library:  A open, B next, hold B previous
-// Reading:  A play/pause, hold A back to library
+// Lists (library, menu, chapters, settings): B next, hold B previous, A choose
+// Reading:  A play/pause, hold A for the menu (chapters, settings, library)
 //           playing: B faster, hold B slower
 //           paused:  B back a sentence, hold B forward a sentence
+// Settings: A on a setting to change it, then B up, hold B down, A done
 // Anywhere: hold A+B to flip the screen
 #include <M5Unified.h>
 
@@ -14,16 +15,18 @@
 
 namespace {
 
-enum class Mode { Library, Reading, Upload, Message };
+enum class Mode { Library, Reading, Menu, Chapters, Settings, Upload, Message };
 
-constexpr uint8_t kBrightness = 150;
-constexpr uint8_t kDimBrightness = 16;
+// Display backlight for brightness settings 1..5.
+constexpr uint8_t kBrightnessLevels[] = {0, 12, 40, 90, 160, 255};
+constexpr uint8_t kMaxBrightness = 5;
+constexpr uint8_t kDimBrightness = 8;
 constexpr uint32_t kDimAfterMs = 60 * 1000;
 constexpr uint32_t kPowerOffAfterMs = 10 * 60 * 1000;
 constexpr uint32_t kSaveEveryMs = 20 * 1000;
 constexpr uint32_t kRepeatMs = 280;
 constexpr uint32_t kFlipHoldMs = 800;
-constexpr uint32_t kStatusRefreshMs = 1000;
+constexpr uint32_t kStatusRefreshMs = 30 * 1000;
 
 Mode mode = Mode::Library;
 rsvp::Reader reader;
@@ -31,9 +34,28 @@ char* bookData = nullptr;
 String bookName;
 
 std::vector<Book> books;
-size_t selected = 0;
+size_t librarySelected = 0;
+
+// Reader menu
+enum MenuEntry : size_t { kMenuResume, kMenuChapters, kMenuSettings, kMenuLibrary, kMenuCount };
+size_t menuSelected = 0;
+
+size_t chapterSelected = 0;
+
+// Settings
+enum SettingEntry : size_t { kSetBrightness, kSetSpeed, kSetTextSize, kSetBack, kSetCount };
+size_t settingSelected = 0;
+bool editingSetting = false;
+Mode settingsReturn = Mode::Library;
+
+Mode messageReturn = Mode::Library;
+String messageTitle, messageBody;
 
 uint8_t rotation = 1;
+uint8_t brightness = 3;
+uint8_t textSize = 2;
+uint16_t wpm = 300;
+
 bool redraw = true;
 bool dimmed = false;
 bool ignoreUntilRelease = false;
@@ -48,17 +70,26 @@ uint32_t lastStatusDrawMs = 0;
 bool uploadJoined = false;
 String uploadStatus;
 
-size_t itemCount() { return books.size() + 1; }  // books, then "Add books"
+// Library rows: books, then these two.
+size_t addBooksRow() { return books.size(); }
+size_t settingsRow() { return books.size() + 1; }
+size_t libraryCount() { return books.size() + 2; }
+
+String titleOf(const String& name) { return name.endsWith(".txt") ? name.substring(0, name.length() - 4) : name; }
+
+void step(size_t& index, size_t count, int direction) { index = (index + count + direction) % count; }
+
+void applyBrightness() { M5.Display.setBrightness(kBrightnessLevels[brightness]); }
 
 void refreshBooks() {
     books = library::list();
-    if (selected >= itemCount()) selected = itemCount() - 1;
+    if (librarySelected >= libraryCount()) librarySelected = libraryCount() - 1;
 }
 
 void saveProgress() {
     if (!bookData) return;
     library::savePosition(bookName, reader.position());
-    library::setWpm(reader.wpm());
+    library::setWpm(wpm);
     lastSaveMs = millis();
 }
 
@@ -70,9 +101,12 @@ void closeBook() {
     bookData = nullptr;
 }
 
-void showMessage(const String& title, const String& body) {
+void showMessage(const String& title, const String& body, Mode returnTo) {
+    messageTitle = title;
+    messageBody = body;
+    messageReturn = returnTo;
     mode = Mode::Message;
-    ui::drawMessage(title, body);
+    redraw = true;
 }
 
 void openBook(const String& name) {
@@ -80,11 +114,11 @@ void openBook(const String& name) {
     size_t size = 0;
     bookData = library::load(name, size);
     if (!bookData) {
-        showMessage("Can't open book", "It may be too big for memory");
+        showMessage("Can't open book", "It may be too big for memory", Mode::Library);
         return;
     }
     bookName = name;
-    reader.setWpm(library::wpm());
+    reader.setWpm(wpm);
     reader.open(bookData, size, library::savedPosition(name));
     library::setLastBook(name);
     mode = Mode::Reading;
@@ -94,7 +128,53 @@ void openBook(const String& name) {
 void goToLibrary() {
     closeBook();
     refreshBooks();
+    for (size_t i = 0; i < books.size(); ++i)
+        if (books[i].name == bookName) librarySelected = i;
     mode = Mode::Library;
+    redraw = true;
+}
+
+void openMenu() {
+    reader.pause();
+    saveProgress();
+    menuSelected = kMenuResume;
+    mode = Mode::Menu;
+    redraw = true;
+}
+
+void openChapters() {
+    if (reader.chapters().empty()) {
+        showMessage("No chapters", "Re-upload the EPUB to add chapters", Mode::Menu);
+        return;
+    }
+    const int current = reader.currentChapter();
+    chapterSelected = current < 0 ? 0 : static_cast<size_t>(current);
+    mode = Mode::Chapters;
+    redraw = true;
+}
+
+void openSettings(Mode returnTo) {
+    settingsReturn = returnTo;
+    settingSelected = 0;
+    editingSetting = false;
+    mode = Mode::Settings;
+    redraw = true;
+}
+
+void closeSettings() {
+    editingSetting = false;
+    library::setBrightness(brightness);
+    library::setWpm(wpm);
+    library::setTextSize(textSize);
+    mode = settingsReturn;
+    redraw = true;
+}
+
+void startUpload() {
+    upload::begin();
+    uploadJoined = false;
+    uploadStatus = "";
+    mode = Mode::Upload;
     redraw = true;
 }
 
@@ -104,42 +184,84 @@ void leaveUpload() {
     goToLibrary();
     // Land on the book that was just added, ready to open with A.
     for (size_t i = 0; i < books.size(); ++i)
-        if (books[i].name == added) selected = i;
+        if (books[i].name == added) librarySelected = i;
 }
 
-void openSelected() {
-    if (selected < books.size()) {
-        openBook(books[selected].name);
-    } else {
-        upload::begin();
-        uploadJoined = false;
-        uploadStatus = "";
-        mode = Mode::Upload;
-        redraw = true;
+void changeSetting(int direction) {
+    switch (settingSelected) {
+    case kSetBrightness:
+        brightness = static_cast<uint8_t>(std::clamp<int>(brightness + direction, 1, kMaxBrightness));
+        applyBrightness();
+        break;
+    case kSetSpeed:
+        wpm = static_cast<uint16_t>(std::clamp<int>(wpm + direction * rsvp::Reader::kWpmStep,
+                                                    rsvp::Reader::kMinWpm, rsvp::Reader::kMaxWpm));
+        reader.setWpm(wpm);
+        break;
+    case kSetTextSize:
+        textSize = static_cast<uint8_t>((textSize + ui::kTextSizeCount + direction) % ui::kTextSizeCount);
+        ui::setTextSize(textSize);
+        break;
     }
 }
+
+// ---- Drawing ----------------------------------------------------------------
 
 void drawLibrary() {
     std::vector<ui::LibraryItem> items;
     for (const auto& b : books) {
-        String title = b.name;
-        if (title.endsWith(".txt")) title.remove(title.length() - 4);
         const size_t pos = library::savedPosition(b.name);
-        const int percent = b.size ? static_cast<int>(static_cast<uint64_t>(pos) * 100 / b.size) : 0;
-        items.push_back({title, percent});
+        items.push_back({titleOf(b.name), b.size ? static_cast<int>(static_cast<uint64_t>(pos) * 100 / b.size) : 0});
     }
     items.push_back({"+ Add books (Wi-Fi)", -1});
-    ui::drawLibrary(items, selected);
+    items.push_back({"Settings", -1});
+    ui::drawLibrary(items, librarySelected);
+}
+
+void drawMenu() {
+    const size_t count = reader.chapters().size();
+    const int current = reader.currentChapter();
+    String chapters = count ? String(current + 1 > 0 ? current + 1 : 1) + " of " + String(count) : "none";
+    ui::drawMenu(titleOf(bookName), "hold A: resume",
+                 {{"Resume", String(static_cast<int>(reader.progress() * 100)) + "%"},
+                  {"Chapters", chapters},
+                  {"Settings", ""},
+                  {"Library", ""}},
+                 menuSelected);
+}
+
+void drawChapters() {
+    std::vector<ui::MenuItem> items;
+    const int current = reader.currentChapter();
+    for (size_t i = 0; i < reader.chapters().size(); ++i) {
+        const auto& c = reader.chapters()[i];
+        items.push_back({c.title.c_str(), static_cast<int>(i) == current ? "here" : ""});
+    }
+    ui::drawMenu("Chapters", "A go   hold A: back", items, chapterSelected);
+}
+
+void drawSettings() {
+    std::vector<ui::MenuItem> items = {
+        {"Brightness", String(brightness) + " of " + String(kMaxBrightness)},
+        {"Reading speed", String(wpm) + " wpm"},
+        {"Text size", ui::kTextSizes[textSize]},
+        {"Back", ""},
+    };
+    ui::drawMenu("Settings", editingSetting ? "B up  hold B down  A done" : "A change   hold A: back", items,
+                 settingSelected, editingSetting);
 }
 
 void draw() {
     switch (mode) {
     case Mode::Library: drawLibrary(); break;
     case Mode::Reading: ui::drawReader(reader, bookName); break;
+    case Mode::Menu: drawMenu(); break;
+    case Mode::Chapters: drawChapters(); break;
+    case Mode::Settings: drawSettings(); break;
     case Mode::Upload:
         ui::drawUpload(upload::ssid(), upload::password(), upload::url(), uploadJoined, uploadStatus);
         break;
-    case Mode::Message: break;  // drawn once by showMessage
+    case Mode::Message: ui::drawMessage(messageTitle, messageBody); break;
     }
     lastStatusDrawMs = millis();
 }
@@ -148,7 +270,11 @@ void draw() {
 
 void onAClick() {
     switch (mode) {
-    case Mode::Library: openSelected(); break;
+    case Mode::Library:
+        if (librarySelected < books.size()) openBook(books[librarySelected].name);
+        else if (librarySelected == addBooksRow()) startUpload();
+        else openSettings(Mode::Library);
+        break;
     case Mode::Reading:
         if (reader.finished()) {
             reader.restart();
@@ -158,25 +284,59 @@ void onAClick() {
             if (!reader.playing()) saveProgress();
         }
         break;
+    case Mode::Menu:
+        switch (menuSelected) {
+        case kMenuResume: mode = Mode::Reading; break;
+        case kMenuChapters: openChapters(); break;
+        case kMenuSettings: openSettings(Mode::Menu); break;
+        case kMenuLibrary: goToLibrary(); break;
+        }
+        break;
+    case Mode::Chapters:
+        reader.goToChapter(chapterSelected);
+        saveProgress();
+        mode = Mode::Reading;  // paused on the chapter's first word
+        break;
+    case Mode::Settings:
+        if (settingSelected == kSetBack) closeSettings();
+        else editingSetting = !editingSetting;
+        break;
     case Mode::Upload: leaveUpload(); break;
-    case Mode::Message: goToLibrary(); break;
+    case Mode::Message: mode = messageReturn; break;
     }
     redraw = true;
 }
 
 void onAHold() {
-    if (mode == Mode::Reading) goToLibrary();
+    switch (mode) {
+    case Mode::Reading: openMenu(); break;
+    case Mode::Menu: mode = Mode::Reading; break;
+    case Mode::Chapters: mode = Mode::Menu; break;
+    case Mode::Settings: closeSettings(); break;
+    default: return;
+    }
+    redraw = true;
 }
 
 void onBClick() {
     switch (mode) {
-    case Mode::Library: selected = (selected + 1) % itemCount(); break;
+    case Mode::Library: step(librarySelected, libraryCount(), +1); break;
     case Mode::Reading:
-        if (reader.playing()) reader.adjustWpm(+1);
-        else reader.previousSentence();
+        if (reader.playing()) {
+            reader.adjustWpm(+1);
+            wpm = reader.wpm();
+        } else {
+            reader.previousSentence();
+        }
+        break;
+    case Mode::Menu: step(menuSelected, kMenuCount, +1); break;
+    case Mode::Chapters: step(chapterSelected, reader.chapters().size(), +1); break;
+    case Mode::Settings:
+        if (editingSetting) changeSetting(+1);
+        else step(settingSelected, kSetCount, +1);
         break;
     case Mode::Upload: leaveUpload(); break;
-    case Mode::Message: goToLibrary(); break;
+    case Mode::Message: mode = messageReturn; break;
     }
     redraw = true;
 }
@@ -184,10 +344,20 @@ void onBClick() {
 // Called once when the hold starts and then repeatedly while B stays down.
 void onBHoldRepeat() {
     switch (mode) {
-    case Mode::Library: selected = (selected + itemCount() - 1) % itemCount(); break;
+    case Mode::Library: step(librarySelected, libraryCount(), -1); break;
     case Mode::Reading:
-        if (reader.playing()) reader.adjustWpm(-1);
-        else reader.nextSentence();
+        if (reader.playing()) {
+            reader.adjustWpm(-1);
+            wpm = reader.wpm();
+        } else {
+            reader.nextSentence();
+        }
+        break;
+    case Mode::Menu: step(menuSelected, kMenuCount, -1); break;
+    case Mode::Chapters: step(chapterSelected, reader.chapters().size(), -1); break;
+    case Mode::Settings:
+        if (editingSetting) changeSetting(-1);
+        else step(settingSelected, kSetCount, -1);
         break;
     default: return;
     }
@@ -198,7 +368,6 @@ void flipScreen() {
     rotation = rotation == 1 ? 3 : 1;
     library::setRotation(rotation);
     ui::setRotation(rotation);
-    if (mode == Mode::Message) goToLibrary();
     redraw = true;
 }
 
@@ -211,7 +380,7 @@ void handleInput(uint32_t now) {
         if (dimmed) {
             // The press that wakes the screen does nothing else.
             dimmed = false;
-            M5.Display.setBrightness(kBrightness);
+            applyBrightness();
             ignoreUntilRelease = true;
         }
     }
@@ -250,12 +419,11 @@ void handleInput(uint32_t now) {
 }
 
 void handleIdle(uint32_t now) {
-    const bool busy = (mode == Mode::Reading && reader.playing());
-    if (busy) lastInputMs = now;
+    if (mode == Mode::Reading && reader.playing()) lastInputMs = now;
     const uint32_t idle = now - lastInputMs;
     if (!dimmed && idle >= kDimAfterMs) {
         dimmed = true;
-        M5.Display.setBrightness(kDimBrightness);
+        M5.Display.setBrightness(std::min(kDimBrightness, kBrightnessLevels[brightness]));
     }
     if (idle >= kPowerOffAfterMs && mode != Mode::Upload) {
         closeBook();
@@ -270,15 +438,19 @@ void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
     Serial.begin(115200);
-    M5.Display.setBrightness(kBrightness);
 
     const bool storageOk = library::begin();
     rotation = library::rotation();
+    brightness = std::clamp<uint8_t>(library::brightness(), 1, kMaxBrightness);
+    textSize = std::min<uint8_t>(library::textSize(), ui::kTextSizeCount - 1);
+    wpm = library::wpm();
+    applyBrightness();
     ui::begin(rotation);
+    ui::setTextSize(textSize);
     lastInputMs = millis();
 
     if (!storageOk) {
-        showMessage("Storage error", "Couldn't mount the book storage");
+        showMessage("Storage error", "Couldn't mount the book storage", Mode::Message);
         return;
     }
 
@@ -287,7 +459,7 @@ void setup() {
     const String last = library::lastBook();
     for (size_t i = 0; i < books.size(); ++i) {
         if (books[i].name == last) {
-            selected = i;
+            librarySelected = i;
             openBook(last);
             break;
         }
@@ -327,9 +499,9 @@ void loop() {
         break;
     }
     case Mode::Library:
-        if (now - lastStatusDrawMs >= 30 * kStatusRefreshMs) redraw = true;  // battery
+        if (now - lastStatusDrawMs >= kStatusRefreshMs) redraw = true;  // battery
         break;
-    case Mode::Message: break;
+    default: break;
     }
 
     handleIdle(now);

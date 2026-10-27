@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace rsvp {
 
@@ -13,10 +14,16 @@ namespace rsvp {
 
 inline bool isSpace(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 
+// A line starting with this character marks a chapter: the rest of the line is
+// its title. Marker lines are never shown as words. The upload page writes them.
+constexpr char kChapterMarker = '\x1e';
+
 // Appends a display-safe ASCII version of a raw UTF-8 word to `out`: curly quotes,
 // dashes and ellipses map to ASCII, accented Latin letters lose their accents and
 // anything else is dropped (the on-device fonts only cover printable ASCII).
 void normalizeWord(std::string_view raw, std::string& out);
+// Same, but keeps single spaces between words (for titles).
+std::string normalizeLine(std::string_view raw);
 
 // ---- Pacing ---------------------------------------------------------------
 
@@ -38,6 +45,11 @@ uint32_t wordDurationMs(std::string_view word, bool nextWordStartsLowercase, boo
                         uint16_t wpm, const Pacing& pacing);
 
 // ---- Reader ---------------------------------------------------------------
+
+struct Chapter {
+    size_t position;  // byte offset of the marker line
+    std::string title;
+};
 
 class Reader {
 public:
@@ -63,6 +75,11 @@ public:
     void nextSentence();
     void restart();
 
+    const std::vector<Chapter>& chapters() const { return chapters_; }
+    // Chapter containing the current word, or -1 before the first chapter.
+    int currentChapter() const;
+    void goToChapter(size_t index);
+
     uint16_t wpm() const { return wpm_; }
     void setWpm(int wpm);
     static constexpr uint16_t kWpmStep = 25;
@@ -78,6 +95,7 @@ public:
     uint32_t secondsLeft() const;
 
 private:
+    size_t lineStart(size_t pos) const;
     size_t nextWordStart(size_t from) const;
     size_t previousWordStart(size_t wordStart) const;
     size_t wordEnd(size_t wordStart) const;
@@ -95,6 +113,7 @@ private:
     const char* data_ = nullptr;
     size_t size_ = 0;
     size_t totalWords_ = 0;
+    std::vector<Chapter> chapters_;
 
     size_t wordStart_ = 0;
     size_t wordEnd_ = 0;

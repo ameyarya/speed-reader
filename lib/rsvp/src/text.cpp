@@ -57,4 +57,22 @@ void normalizeWord(std::string_view raw, std::string& out) {
     }
 }
 
+std::string normalizeLine(std::string_view raw) {
+    std::string out;
+    size_t i = 0;
+    while (i < raw.size()) {
+        while (i < raw.size() && isSpace(raw[i])) ++i;
+        size_t end = i;
+        while (end < raw.size() && !isSpace(raw[end])) ++end;
+        if (end == i) break;
+        const size_t before = out.size();
+        if (!out.empty()) out.push_back(' ');
+        const size_t wordStart = out.size();
+        normalizeWord(raw.substr(i, end - i), out);
+        if (out.size() == wordStart) out.resize(before);  // nothing drawable in that word
+        i = end;
+    }
+    return out;
+}
+
 } // namespace rsvp

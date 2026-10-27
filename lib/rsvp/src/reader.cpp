@@ -25,15 +25,21 @@ void Reader::open(const char* data, size_t size, size_t position) {
     finished_ = false;
 
     totalWords_ = 0;
-    for (size_t i = 0; i < size_;) {
-        while (i < size_ && isSpace(data_[i])) ++i;
-        if (i == size_) break;
-        ++totalWords_;
-        while (i < size_ && !isSpace(data_[i])) ++i;
+    chapters_.clear();
+    for (size_t i = nextWordStart(0); i < size_; i = nextWordStart(wordEnd(i))) ++totalWords_;
+    for (size_t i = 0; i < size_; ++i) {
+        if (data_[i] != kChapterMarker || (i > 0 && data_[i - 1] != '\n')) continue;
+        size_t end = i + 1;
+        while (end < size_ && data_[end] != '\n') ++end;
+        std::string title = normalizeLine(std::string_view(data_ + i + 1, end - i - 1));
+        if (title.empty()) title = "Chapter " + std::to_string(chapters_.size() + 1);
+        chapters_.push_back({i, std::move(title)});
+        i = end;
     }
 
     position = std::min(position, size_);
     while (position > 0 && !isSpace(data_[position - 1])) --position;
+    if (position < size_ && data_[lineStart(position)] == kChapterMarker) position = lineStart(position);
     if (!loadWordFrom(position)) {
         // Saved spot was at the very end; show the start again.
         if (!loadWordFrom(0)) finished_ = true;
@@ -45,9 +51,17 @@ void Reader::restart() {
     finished_ = !loadWordFrom(0);
 }
 
+size_t Reader::lineStart(size_t pos) const {
+    while (pos > 0 && data_[pos - 1] != '\n') --pos;
+    return pos;
+}
+
 size_t Reader::nextWordStart(size_t from) const {
-    while (from < size_ && isSpace(data_[from])) ++from;
-    return from;
+    for (;;) {
+        while (from < size_ && isSpace(data_[from])) ++from;
+        if (from >= size_ || data_[from] != kChapterMarker) return from;
+        while (from < size_ && data_[from] != '\n') ++from;  // skip the marker line
+    }
 }
 
 size_t Reader::wordEnd(size_t wordStart) const {
@@ -57,9 +71,15 @@ size_t Reader::wordEnd(size_t wordStart) const {
 
 size_t Reader::previousWordStart(size_t wordStart) const {
     size_t p = wordStart;
-    while (p > 0 && isSpace(data_[p - 1])) --p;
-    while (p > 0 && !isSpace(data_[p - 1])) --p;
-    return p;
+    for (;;) {
+        while (p > 0 && isSpace(data_[p - 1])) --p;
+        if (p == 0) return nextWordStart(0) <= wordStart ? nextWordStart(0) : wordStart;
+        size_t q = p;
+        while (q > 0 && !isSpace(data_[q - 1])) --q;
+        const size_t line = lineStart(q);
+        if (data_[line] != kChapterMarker) return q;
+        p = line;  // that word belongs to a chapter title; keep going back
+    }
 }
 
 bool Reader::startsLowercase(size_t wordStart) const {
@@ -186,6 +206,17 @@ void Reader::nextSentence() {
         if (ends) break;
     }
     loadWordFrom(p);
+}
+
+int Reader::currentChapter() const {
+    int current = -1;
+    for (size_t i = 0; i < chapters_.size() && chapters_[i].position <= wordStart_; ++i) current = static_cast<int>(i);
+    return current;
+}
+
+void Reader::goToChapter(size_t index) {
+    if (index >= chapters_.size()) return;
+    if (loadWordFrom(chapters_[index].position)) finished_ = false;
 }
 
 void Reader::setWpm(int wpm) {

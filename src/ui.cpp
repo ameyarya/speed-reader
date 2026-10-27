@@ -15,13 +15,17 @@ constexpr int kGuideTop = 30;
 constexpr int kGuideBottom = 100;
 constexpr int kWordMiddle = (kGuideTop + kGuideBottom) / 2;
 
+size_t largestFont = 1;
+
 uint16_t kBackground, kText, kDim, kHint, kFaint, kAccent, kSelected;
 
 struct WordFont {
     const lgfx::IFont* font;
     int capHeight;
 };
+// Largest first. The text size setting picks where to start; long words step down.
 const WordFont kWordFonts[] = {
+    {&fonts::FreeSansBold24pt7b, 34},
     {&fonts::FreeSansBold18pt7b, 25},
     {&fonts::FreeSansBold12pt7b, 17},
     {&fonts::FreeSansBold9pt7b, 13},
@@ -65,8 +69,10 @@ void drawWord(const String& word, int pivot) {
     const String after = word.substring(pivot + 1);
 
     // Largest font that keeps the word on screen with the focus letter on the anchor.
-    const WordFont* chosen = &kWordFonts[2];
-    for (const auto& f : kWordFonts) {
+    constexpr size_t kFontCount = sizeof(kWordFonts) / sizeof(kWordFonts[0]);
+    const WordFont* chosen = &kWordFonts[kFontCount - 1];
+    for (size_t i = largestFont; i < kFontCount; ++i) {
+        const auto& f = kWordFonts[i];
         canvas.setFont(f.font);
         const int left = canvas.textWidth(before) + canvas.textWidth(focus) / 2;
         const int right = canvas.textWidth(focus) - canvas.textWidth(focus) / 2 + canvas.textWidth(after);
@@ -107,6 +113,59 @@ void begin(uint8_t rotation) {
 
 void setRotation(uint8_t rotation) { M5.Display.setRotation(rotation); }
 
+void setTextSize(uint8_t size) {
+    // Extra large starts at the 24pt font, Small at 9pt.
+    largestFont = kTextSizeCount - 1 - std::min<uint8_t>(size, kTextSizeCount - 1);
+}
+
+void drawMenu(const String& title, const String& hint, const std::vector<MenuItem>& items, size_t selected,
+              bool editing) {
+    constexpr int kRowH = 26;
+    constexpr int kTop = 26;
+    constexpr int kVisible = 4;
+
+    canvas.fillScreen(kBackground);
+    canvas.setFont(&fonts::Font2);
+    canvas.setTextDatum(textdatum_t::top_left);
+    canvas.setTextColor(kDim);
+    canvas.drawString(title, 8, 5);
+    canvas.setTextDatum(textdatum_t::top_right);
+    canvas.setTextColor(editing ? kAccent : kHint);
+    canvas.drawString(hint, kW - 6, 5);
+
+    const size_t first = selected >= kVisible ? selected - kVisible + 1 : 0;
+    for (size_t i = first; i < items.size() && i < first + kVisible; ++i) {
+        const int y = kTop + static_cast<int>(i - first) * kRowH;
+        const int mid = y + kRowH / 2 - 1;
+        const bool isSelected = i == selected;
+        if (isSelected) {
+            canvas.fillRoundRect(4, y, kW - 8, kRowH - 2, 4, kSelected);
+            canvas.fillRect(4, y + 4, 3, kRowH - 10, kAccent);
+        }
+        int valueWidth = 0;
+        if (!items[i].value.isEmpty()) {
+            canvas.setFont(&fonts::Font2);
+            valueWidth = canvas.textWidth(items[i].value);
+            const int right = kW - 14;
+            if (isSelected && editing) {
+                canvas.drawRoundRect(right - valueWidth - 8, y + 3, valueWidth + 14, kRowH - 8, 4, kAccent);
+                canvas.setTextColor(kText);
+            } else {
+                canvas.setTextColor(kDim);
+            }
+            canvas.setTextDatum(textdatum_t::middle_right);
+            canvas.drawString(items[i].value, right, mid);
+            valueWidth += 16;
+        }
+        canvas.setFont(isSelected ? &fonts::FreeSansBold9pt7b : &fonts::FreeSans9pt7b);
+        canvas.setTextDatum(textdatum_t::middle_left);
+        canvas.setTextColor(isSelected ? kText : kDim);
+        canvas.drawString(fitText(items[i].label, kW - 26 - valueWidth), 14, mid);
+    }
+    if (first + kVisible < items.size()) canvas.fillTriangle(kW / 2 - 4, kH - 4, kW / 2 + 4, kH - 4, kW / 2, kH, kDim);
+    canvas.pushSprite(0, 0);
+}
+
 void drawReader(const rsvp::Reader& reader, const String& title) {
     canvas.fillScreen(kBackground);
 
@@ -135,7 +194,7 @@ void drawReader(const rsvp::Reader& reader, const String& title) {
         // Paused: show what the buttons do instead of stats.
         canvas.setTextDatum(textdatum_t::bottom_center);
         canvas.setTextColor(reader.finished() ? kAccent : kDim);
-        canvas.drawString(reader.finished() ? "the end   A: read again" : "A play   B back   hold A: library",
+        canvas.drawString(reader.finished() ? "the end   A: read again" : "A play   B back   hold A: menu",
                           kW / 2, kH - 6);
         canvas.pushSprite(0, 0);
         return;

@@ -40,6 +40,11 @@ bool begin() {
     if (!LittleFS.exists(kBooksDir)) {
         LittleFS.mkdir(kBooksDir);
         seedWelcomeBook();
+    } else if (File f = LittleFS.open(pathFor("Welcome.txt"), "r")) {
+        // Refresh the guide after a firmware update changes it (unless it was removed).
+        const bool outdated = f.size() != strlen(kWelcomeText);
+        f.close();
+        if (outdated) seedWelcomeBook();
     }
     return true;
 }
@@ -127,5 +132,15 @@ void setWpm(uint16_t wpm) {
 
 uint8_t rotation() { return settings.getUChar("rot", 1); }
 void setRotation(uint8_t rotation) { settings.putUChar("rot", rotation); }
+
+uint8_t brightness() { return settings.getUChar("bright", 3); }
+void setBrightness(uint8_t level) {
+    if (settings.getUChar("bright", 0) != level) settings.putUChar("bright", level);
+}
+
+uint8_t textSize() { return settings.getUChar("size", 2); }
+void setTextSize(uint8_t size) {
+    if (settings.getUChar("size", 255) != size) settings.putUChar("size", size);
+}
 
 } // namespace library

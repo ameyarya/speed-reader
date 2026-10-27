@@ -124,8 +124,11 @@ const BLOCKS = new Set(['p','div','section','article','h1','h2','h3','h4','h5','
   'br','hr','tr','pre','dd','dt','figcaption','header','footer','aside','table']);
 const SKIP = new Set(['script','style','head','title','svg','math','rt','rp']);
 
-function htmlToText(markup) {
-  const doc = parseXml(markup, 'application/xhtml+xml') || new DOMParser().parseFromString(markup, 'text/html');
+function parseHtml(markup) {
+  return parseXml(markup, 'application/xhtml+xml') || new DOMParser().parseFromString(markup, 'text/html');
+}
+
+function htmlToText(doc) {
   const out = [];
   const walk = (node) => {
     for (const child of node.childNodes) {
@@ -154,21 +157,93 @@ async function epubToText(buf) {
   if (!opf) throw new Error('EPUB package is damaged');
   const base = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
 
+  const items = [...opf.getElementsByTagNameNS('*', 'item')];
   const manifest = {};
-  for (const item of opf.getElementsByTagNameNS('*', 'item')) manifest[item.getAttribute('id')] = item.getAttribute('href');
+  for (const item of items) manifest[item.getAttribute('id')] = item.getAttribute('href');
   const titleEl = opf.getElementsByTagNameNS('*', 'title')[0];
   const title = titleEl ? titleEl.textContent.trim() : '';
+  const toc = await readToc(zip, opf, items, base);
+  const hasToc = Object.keys(toc).length > 0;
 
-  const chapters = [];
+  const parts = [];
   for (const ref of opf.getElementsByTagNameNS('*', 'itemref')) {
     if (ref.getAttribute('linear') === 'no') continue;
     const href = manifest[ref.getAttribute('idref')];
     if (!href) continue;
-    const markup = await zip.text(resolvePath(base, href));
-    if (markup) chapters.push(htmlToText(markup));
+    const file = resolvePath(base, href);
+    const markup = await zip.text(file);
+    if (!markup) continue;
+    const doc = parseHtml(markup);
+    const text = htmlToText(doc);
+    if (!text.trim()) continue;
+    // A chapter starts at each file the table of contents points to. Without a
+    // table of contents, at each file that opens with a heading.
+    let chapter = toc[file];
+    if (!hasToc) {
+      const heading = doc.querySelector && doc.querySelector('h1, h2, h3');
+      chapter = heading ? heading.textContent : null;
+    }
+    parts.push(chapter ? chapterMarker(chapter) + text : text);
   }
-  if (!chapters.length) throw new Error('found no chapters in this EPUB');
-  return { title, text: chapters.join('\n\n') };
+  if (!parts.length) throw new Error('found no chapters in this EPUB');
+  return { title, text: parts.join('\n\n') };
+}
+
+// The stick treats a line starting with this character as a chapter title.
+const MARKER = String.fromCharCode(30);
+
+function chapterMarker(title) {
+  const clean = title.normalize('NFKD').replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return '\n\n' + MARKER + clean + '\n';
+}
+
+// Map of chapter file -> title, from the EPUB 3 nav document or the EPUB 2 NCX.
+async function readToc(zip, opf, items, base) {
+  const toc = {};
+  const add = (dir, href, label) => {
+    if (!href) return;
+    const file = resolvePath(dir, href);
+    const title = (label || '').replace(/\s+/g, ' ').trim();
+    if (title && !(file in toc)) toc[file] = title;
+  };
+  const dirOf = (path) => path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+
+  const nav = items.find((i) => (i.getAttribute('properties') || '').split(/\s+/).includes('nav'));
+  if (nav) {
+    const path = resolvePath(base, nav.getAttribute('href'));
+    const markup = await zip.text(path);
+    if (markup) {
+      const doc = parseHtml(markup);
+      const navs = [...doc.getElementsByTagName('nav')];
+      const main = navs.find((n) => /toc/.test(n.getAttribute('epub:type') || n.getAttributeNS('http://www.idpf.org/2007/ops', 'type') || '')) || navs[0];
+      if (main) for (const a of main.getElementsByTagName('a')) add(dirOf(path), a.getAttribute('href'), a.textContent);
+    }
+  }
+  if (Object.keys(toc).length) return toc;
+
+  const ncx = items.find((i) => i.getAttribute('media-type') === 'application/x-dtbncx+xml');
+  if (ncx) {
+    const path = resolvePath(base, ncx.getAttribute('href'));
+    const doc = parseXml(await zip.text(path) || '', 'application/xml');
+    if (doc) {
+      for (const point of doc.getElementsByTagNameNS('*', 'navPoint')) {
+        const label = point.getElementsByTagNameNS('*', 'text')[0];
+        const content = point.getElementsByTagNameNS('*', 'content')[0];
+        add(dirOf(path), content && content.getAttribute('src'), label && label.textContent);
+      }
+    }
+  }
+  return toc;
+}
+
+// Plain text books: a short line like "Chapter 3" or "PART TWO" after a blank line.
+function markTextChapters(text) {
+  if (text.includes(MARKER)) return text;
+  const lines = text.split('\n');
+  const heading = /^(chapter|part|book|prologue|epilogue)\b.{0,50}$/i;
+  return lines.map((line, i) =>
+    heading.test(line) && (i === 0 || lines[i - 1] === '') ? MARKER + line + '\n' + line : line
+  ).join('\n');
 }
 
 // ---- Text clean-up --------------------------------------------------------
@@ -236,6 +311,7 @@ async function addBook(file) {
       text = decodeText(buf);
     }
     text = cleanText(text);
+    if (!/\.epub$/i.test(file.name)) text = markTextChapters(text);
     const nonAscii = (text.match(/[^\x00-\x7f]/g) || []).length;
     if (nonAscii > text.length * 0.3) throw new Error("this book's alphabet isn't supported yet (Latin letters only)");
     job.say('Sending ' + title + ' (' + fmtSize(text.length) + ')...');

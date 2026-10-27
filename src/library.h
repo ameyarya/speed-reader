@@ -37,4 +37,12 @@ void setWpm(uint16_t wpm);
 uint8_t rotation();
 void setRotation(uint8_t rotation);
 
+// 1 (dimmest) to 5.
+uint8_t brightness();
+void setBrightness(uint8_t level);
+
+// Index into ui::kTextSizes.
+uint8_t textSize();
+void setTextSize(uint8_t size);
+
 } // namespace library

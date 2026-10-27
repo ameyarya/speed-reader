@@ -11,7 +11,9 @@ While reading, press the side button to go faster. Hold the side button to slow 
 
 While paused, press the side button to jump back a sentence, or hold it to skip ahead one.
 
-Hold the front button to go back to your library. Your place in every book is saved.
+Hold the front button to open the menu. From there you can jump to a chapter, change settings like brightness, speed and text size, or go back to your library. Your place in every book is saved.
+
+In any list, press the side button to move down and hold it to move up. Press the front button to choose.
 
 To add books, choose "Add books" in the library. Join the Wi-Fi network shown on screen, then open the page it shows in your browser and drop in EPUB or text files.
 
