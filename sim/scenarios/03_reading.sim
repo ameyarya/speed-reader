@@ -1,0 +1,45 @@
+# books: No Chapters.txt, Tiny.txt
+# Play, pause, the end of a book, reading again, and speed changes.
+wait 500
+b
+a
+expect book=Tiny.txt
+expect word=One
+expect playing=0
+shot paused
+a
+expect playing=1
+wait 3500
+expect finished=1
+expect playing=0
+expect word=three.
+shot the-end
+a
+wait 100
+expect playing=1
+expect word=One
+wait 3500
+expect finished=1
+# speed: B faster, hold B slower, while playing
+hold a 1200
+expect mode=menu
+b
+b
+b
+a
+expect mode=library
+expect lib=1/4
+hold b 700
+a
+expect book=No Chapters.txt
+a
+expect playing=1
+b
+expect wpm=325
+b
+expect wpm=350
+hold b 700
+expect wpm=325
+shot playing
+a
+expect playing=0

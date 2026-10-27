@@ -1,0 +1,15 @@
+# Holding A and B flips the screen, without also pressing either, and it's remembered.
+wait 800
+expect rotation=1
+hold ab 1200
+expect flipped=1
+expect rotation=3
+expect mode=library
+expect lib=0/3
+shot flipped
+reboot
+wait 800
+expect flipped=1
+expect rotation=3
+hold ab 1200
+expect flipped=0

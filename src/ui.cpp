@@ -154,10 +154,11 @@ void drawListHeader(const String& title, const String& hint, bool hintIsActive) 
     canvas.setTextDatum(textdatum_t::top_right);
     canvas.setTextColor(hintIsActive ? kAccent : kHint);
     canvas.drawString(hint, L.w - 30, 5);
-    const int hintW = canvas.textWidth(hint);
+    // A long hint (like the one while changing a setting) takes the title's place.
+    const int room = L.w - 46 - canvas.textWidth(hint);
     canvas.setTextDatum(textdatum_t::top_left);
     canvas.setTextColor(kDim);
-    canvas.drawString(fitText(title, L.w - 46 - hintW), 8, 5);
+    if (canvas.textWidth(title) <= room || room >= 60) canvas.drawString(fitText(title, room), 8, 5);
     drawBattery(L.w - 4, 8);
 }
 

@@ -1,0 +1,54 @@
+# Sleep and Power off from Settings; the waking press is ignored; idle dimming and auto sleep.
+wait 800
+a
+expect mode=reading
+hold a 1200
+b
+b
+a
+b
+b
+b
+b
+expect setting=4
+shot sleep-row
+a
+wait 1500
+expect mode=asleep
+a
+wait 800
+expect mode=reading
+expect book=Welcome.txt
+expect playing=0
+# Power off: on USB the stick can't cut power, so it sleeps instead
+hold a 1200
+b
+b
+a
+b
+b
+b
+b
+b
+expect setting=5
+a
+wait 1500
+expect mode=asleep
+b
+wait 800
+expect mode=reading
+expect playing=0
+# dims after a minute; the press that brightens it does nothing else
+advance 61000
+wait 200
+expect dimmed=1
+a
+expect dimmed=0
+expect playing=0
+# sleeps by itself after ten idle minutes
+advance 601000
+wait 1500
+expect mode=asleep
+a
+wait 800
+expect mode=reading

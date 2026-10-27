@@ -1,0 +1,125 @@
+# Every setting: changing, wrapping or stopping at its limits, leaving, and surviving a restart.
+wait 800
+hold b 700
+expect lib=2/3
+a
+expect mode=settings
+expect setting=0
+shot list
+# Theme wraps both ways
+a
+expect setting=0(editing)
+shot editing
+b
+expect theme=1
+b
+expect theme=2
+b
+expect theme=3
+b
+expect theme=4
+b
+expect theme=0
+hold b 700
+expect theme=4
+b
+b
+expect theme=1
+a
+expect setting=0
+reject editing
+# Brightness stops at 5 and at 1
+b
+a
+b
+b
+b
+b
+expect bright=5
+hold b 2500
+expect bright=1
+b
+b
+expect bright=3
+a
+# Speed stops at 100 and at 1000
+b
+a
+hold b 9000
+expect wpm=100
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+expect wpm=1000
+hold b 700
+expect wpm=975
+a
+# Text size wraps
+b
+a
+b
+expect size=3
+b
+expect size=0
+hold b 700
+expect size=3
+b
+b
+b
+expect size=2
+a
+# Back returns to the library
+b
+b
+b
+expect setting=6
+a
+expect mode=library
+# Hold A also leaves (and saves)
+a
+expect mode=settings
+hold a 1200
+expect mode=library
+reboot
+wait 800
+expect theme=1
+expect bright=3
+expect wpm=975
+expect size=2

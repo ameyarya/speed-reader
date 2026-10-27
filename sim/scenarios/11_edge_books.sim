@@ -1,0 +1,30 @@
+# books: Empty.txt, Long Words.txt, Unsupported.txt
+# Books with nothing readable don't crash anything; long words come in pieces.
+wait 800
+a
+expect mode=message
+expect message=Nothing to read
+expect book=none
+shot empty
+a
+expect mode=library
+expect lib=0/5
+b
+b
+a
+expect message=Nothing to read
+b
+expect mode=library
+# and neither one becomes the book that reopens on boot
+reboot
+wait 800
+expect mode=library
+b
+a
+expect book=Long Words.txt
+a
+wait 450
+shot long-word-1
+wait 500
+shot long-word-2
+a

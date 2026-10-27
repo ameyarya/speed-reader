@@ -1,0 +1,33 @@
+# books: No Chapters.txt, Tiny.txt
+# Position, speed and last book survive a restart.
+wait 500
+a
+expect book=No Chapters.txt
+a
+b
+b
+a
+expect playing=0
+expect wpm=350
+b
+b
+b
+expect word=First
+hold b 700
+hold b 700
+expect word=Third
+reboot
+wait 800
+expect mode=reading
+expect book=No Chapters.txt
+expect word=Third
+expect playing=0
+expect wpm=350
+# going to the library keeps the book selected there
+hold a 1200
+b
+b
+b
+a
+expect mode=library
+expect lib=0/4

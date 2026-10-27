@@ -39,11 +39,24 @@ pio run -t upload
 
 If the upload can't find the stick, put it in download mode (see M5Stack's StickS3 docs for the button combination) and try again.
 
-Run the reading engine's tests on your computer (no stick needed):
+## Testing
+
+Two test suites run on your computer, no stick needed.
+
+The reading engine's unit tests (tokenizing, pacing, sentences, chapters):
 
 ```bash
 ./tools/test.sh
 ```
+
+The simulator runs the real firmware in a window on your Mac (`brew install sdl2` first) and drives it with scripted button presses, checking what's on screen after each step and saving screenshots to `.build/sim/`:
+
+```bash
+tools/sim_test.py            # every scenario in sim/scenarios
+tools/sim_test.py chapters   # just the ones whose name matches
+```
+
+Scenarios cover the library, reading and speed, sentence jumps, resuming after a restart, chapters (including books with a cover and title page before Chapter 1), every setting and its limits, themes, adding and removing books, sleep and waking, idle dimming and auto-sleep, flipping the screen, and books with nothing readable. To try it by hand, run `.pio/build/sim/program` and use the `a` and `b` keys as the buttons.
 
 ## Adding books
 
@@ -65,6 +78,7 @@ src/library.cpp  books on LittleFS, positions and settings in NVS
 src/upload.cpp   Wi-Fi access point and upload API
 src/upload_page.h  the upload page, including the in-browser EPUB converter
 test/            host tests for lib/rsvp
+sim/             desktop simulator: Arduino stand-ins, script runner, scenarios, test books
 ```
 
 ## Credits

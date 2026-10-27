@@ -135,6 +135,11 @@ void openBook(const String& name) {
     bookName = name;
     reader.setWpm(wpm);
     reader.open(bookData, size, library::savedPosition(name));
+    if (reader.display().empty()) {
+        closeBook();
+        showMessage("Nothing to read", "This book has no text the stick can show", Mode::Library);
+        return;
+    }
     library::setLastBook(name);
     mode = Mode::Reading;
     redraw = true;
@@ -238,10 +243,16 @@ void drawLibrary() {
     ui::drawLibrary(items, librarySelected);
 }
 
-void drawMenu() {
-    const size_t count = reader.chapters().size();
+// Name the chapter rather than its number: tables of contents often list a
+// cover, title page and so on first, so "16" can really be Chapter 12.
+String chapterLabel() {
+    if (reader.chapters().empty()) return "none";
     const int current = reader.currentChapter();
-    String chapters = count ? String(current + 1 > 0 ? current + 1 : 1) + " of " + String(count) : "none";
+    return current < 0 ? String("Start") : String(reader.chapters()[current].title.c_str());
+}
+
+void drawMenu() {
+    const String chapters = chapterLabel();
     ui::drawMenu(titleOf(bookName), "hold A: resume",
                  {{"Resume", String(static_cast<int>(reader.progress() * 100)) + "%"},
                   {"Chapters", chapters},
@@ -359,6 +370,7 @@ void onBClick() {
             wpm = reader.wpm();
         } else {
             reader.previousSentence();
+            saveProgress();
         }
         break;
     case Mode::Menu: step(menuSelected, kMenuCount, +1); break;
@@ -383,6 +395,7 @@ void onBHoldRepeat() {
             wpm = reader.wpm();
         } else {
             reader.nextSentence();
+            saveProgress();
         }
         break;
     case Mode::Menu: step(menuSelected, kMenuCount, -1); break;
@@ -515,6 +528,33 @@ void handleIdle(uint32_t now) {
 
 } // namespace
 
+// One line describing what's on screen, for tests (sim/) and the serial "state" command.
+String debugState() {
+    static const char* kModes[] = {"library", "reading", "menu", "chapters", "settings", "upload", "message"};
+    String s = String("mode=") + kModes[static_cast<int>(mode)];
+    s += " book=" + (bookData ? bookName : String("none"));
+    if (bookData) {
+        s += String(" word=") + reader.display().c_str();
+        s += String(" playing=") + (reader.playing() ? "1" : "0");
+        s += String(" finished=") + (reader.finished() ? "1" : "0");
+        s += " pos=" + String(static_cast<unsigned>(reader.position()));
+        const int c = reader.currentChapter();
+        s += " chapter=" + String(c) + "/" + String(static_cast<unsigned>(reader.chapters().size()));
+        if (c >= 0) s += String(" chapterTitle=") + reader.chapters()[c].title.c_str();
+        s += " menuChapter=" + chapterLabel();
+    }
+    s += " wpm=" + String(wpm) + " theme=" + String(theme) + " bright=" + String(brightness) +
+         " size=" + String(textSize) + " flipped=" + String(flipped ? 1 : 0) +
+         " rotation=" + String(static_cast<int>(M5.Display.getRotation()));
+    s += " lib=" + String(static_cast<unsigned>(librarySelected)) + "/" + String(static_cast<unsigned>(libraryCount()));
+    s += " menu=" + String(static_cast<unsigned>(menuSelected));
+    s += " chapterSel=" + String(static_cast<unsigned>(chapterSelected));
+    s += " setting=" + String(static_cast<unsigned>(settingSelected)) + (editingSetting ? "(editing)" : "");
+    if (mode == Mode::Message) s += " message=" + messageTitle;
+    s += " dimmed=" + String(dimmed ? 1 : 0);
+    return s;
+}
+
 void setup() {
     // Undo what sleepNow() set up, so the pins work normally again.
     const bool wokeByButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
@@ -531,6 +571,8 @@ void setup() {
     Serial.printf("boot: reset reason %d, wake cause %d\n", static_cast<int>(esp_reset_reason()),
                   static_cast<int>(esp_sleep_get_wakeup_cause()));
 
+    mode = Mode::Library;
+    redraw = true;
     const bool storageOk = library::begin();
     flipped = library::flipped();
     theme = std::min<uint8_t>(library::theme(), ui::kThemeCount - 1);
@@ -571,6 +613,7 @@ void loop() {
         if (c == '\n') {
             command.trim();
             if (command == "sleep") sleepNow();
+            if (command == "state") Serial.println(debugState());
             command = "";
         } else if (command.length() < 16) {
             command += c;

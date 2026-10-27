@@ -1,0 +1,22 @@
+# Add books: join screen, phone joined, a book arrives, and both buttons leave.
+wait 800
+b
+expect lib=1/3
+a
+expect mode=upload
+shot join
+wait 2300
+shot joined
+upload sim/fixtures/Tiny.txt
+wait 300
+shot added
+a
+expect mode=library
+# the new book is selected (Tiny sorts before Welcome)
+expect lib=0/4
+b
+b
+a
+expect mode=upload
+b
+expect mode=library

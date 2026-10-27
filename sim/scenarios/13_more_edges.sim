@@ -1,0 +1,73 @@
+# books: Long Words.txt, Preface First.txt, Tiny.txt
+# Text before the first chapter, holding A while playing, Extra large text,
+# and deleting the book that would reopen on boot.
+wait 800
+b
+a
+expect book=Preface First.txt
+expect chapter=-1/1
+expect menuChapter=Start
+hold a 1200
+b
+a
+expect mode=chapters
+expect chapterSel=0
+a
+expect chapterTitle=Chapter 1
+expect menuChapter=Chapter 1
+expect word=Chapter
+# hold A while playing opens the menu and pauses
+a
+wait 600
+expect playing=1
+hold a 1200
+expect mode=menu
+expect playing=0
+# Extra large text: a long word still fits (it steps down a size)
+b
+b
+a
+b
+b
+b
+a
+b
+a
+expect size=3
+reject editing
+hold a 1200
+expect mode=menu
+expect menu=2
+b
+a
+expect mode=library
+expect lib=1/5
+hold b 700
+a
+expect book=Long Words.txt
+a
+wait 300
+a
+shot xl-long-word
+hold a 1200
+b
+b
+b
+a
+expect mode=library
+expect lib=0/5
+# delete the last-opened book, then restart: the library shows, no crash
+b
+b
+b
+a
+expect mode=upload
+delete Long Words.txt
+wait 300
+a
+expect mode=library
+expect /4 
+reboot
+wait 800
+expect mode=library
+expect book=none

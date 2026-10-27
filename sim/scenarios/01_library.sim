@@ -1,0 +1,15 @@
+# Fresh stick: the Welcome book is created, and the library list wraps both ways.
+wait 800
+expect mode=library
+expect lib=0/3
+shot fresh
+b
+expect lib=1/3
+b
+expect lib=2/3
+b
+expect lib=0/3
+hold b 700
+expect lib=2/3
+hold b 700
+expect lib=1/3

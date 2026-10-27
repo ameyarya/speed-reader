@@ -1,0 +1,90 @@
+# books: Front Matter.txt, No Chapters.txt
+# A book whose table of contents starts with a cover, title page, contents and dedication.
+wait 500
+a
+expect chapter=0/24
+expect chapterTitle=Cover
+hold a 1200
+expect mode=menu
+b
+expect menu=1
+a
+expect mode=chapters
+expect chapterSel=0
+shot list-start
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+b
+expect chapterSel=15
+shot list-ch12
+a
+expect mode=reading
+expect chapterTitle=Chapter 12
+expect word=Chapter
+expect playing=0
+hold a 1200
+expect mode=menu
+shot menu-ch12
+# the list opens on the chapter you're in
+b
+a
+expect chapterSel=15
+hold b 700
+expect chapterSel=14
+hold a 1200
+expect mode=menu
+hold a 1200
+expect mode=reading
+expect chapterTitle=Chapter 12
+# reading on crosses into the next chapter
+a
+wait 4500
+expect chapterTitle=Chapter 13
+a
+# the list wraps at the top
+hold a 1200
+b
+a
+expect chapterSel=16
+b
+b
+b
+b
+b
+b
+b
+b
+expect chapterSel=0
+hold b 700
+expect chapterSel=23
+hold a 1200
+hold a 1200
+# a book without chapters says so, and A goes back to the menu
+hold a 1200
+b
+b
+b
+a
+b
+a
+expect book=No Chapters.txt
+hold a 1200
+b
+a
+expect mode=message
+expect message=No chapters
+shot no-chapters
+a
+expect mode=menu

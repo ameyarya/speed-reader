@@ -1,0 +1,20 @@
+# books: Empty.txt, Front Matter.txt, Long Words.txt, No Chapters.txt, Tiny.txt, Unsupported.txt
+# More rows than fit on screen: the list scrolls and wraps.
+wait 800
+expect lib=0/8
+reject Welcome
+shot top
+b
+b
+b
+b
+b
+expect lib=5/8
+shot scrolled
+b
+b
+b
+expect lib=0/8
+hold b 700
+expect lib=7/8
+shot bottom

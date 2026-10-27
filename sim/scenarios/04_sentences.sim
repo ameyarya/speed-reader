@@ -1,0 +1,25 @@
+# books: No Chapters.txt
+# While paused: B goes back a sentence, hold B goes forward, both stop at the ends.
+wait 500
+a
+expect word=First
+hold b 700
+expect word=Second
+hold b 700
+expect word=Third
+hold b 700
+expect word=Third
+b
+expect word=Second
+b
+expect word=First
+b
+expect word=First
+# from the middle of a sentence, B goes to that sentence's start
+hold b 700
+a
+wait 550
+a
+expect word=sentence
+b
+expect word=Second

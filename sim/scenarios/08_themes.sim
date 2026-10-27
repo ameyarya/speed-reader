@@ -1,0 +1,60 @@
+# The reader and lists in every theme, for screenshots. Settings opened from the reader menu return there.
+wait 800
+a
+expect mode=reading
+shot dark-reader
+hold a 1200
+b
+b
+a
+expect mode=settings
+a
+b
+a
+hold a 1200
+expect mode=menu
+shot light-menu
+hold a 1200
+shot light-reader
+hold a 1200
+b
+b
+a
+a
+b
+a
+hold a 1200
+hold a 1200
+expect theme=2
+shot sepia-reader
+hold a 1200
+b
+b
+a
+a
+b
+a
+hold a 1200
+hold a 1200
+expect theme=3
+shot eink-reader
+a
+wait 1500
+shot eink-playing
+a
+hold a 1200
+b
+b
+a
+a
+b
+a
+hold a 1200
+hold a 1200
+expect theme=4
+shot night-reader
+hold a 1200
+b
+b
+a
+shot night-settings
