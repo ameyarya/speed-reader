@@ -7,17 +7,45 @@ namespace {
 
 M5Canvas canvas(&M5.Display);
 
-constexpr int kW = 240;
-constexpr int kH = 135;
-// The red letter always lands here, so the eye never has to move.
-constexpr int kAnchorX = 88;
-constexpr int kGuideTop = 30;
-constexpr int kGuideBottom = 100;
-constexpr int kWordMiddle = (kGuideTop + kGuideBottom) / 2;
+struct Theme {
+    uint8_t bg[3], text[3], dim[3], hint[3], faint[3], accent[3], selected[3];
+    bool underlinePivot;  // for themes where the accent alone is hard to see
+};
 
-size_t largestFont = 1;
+// Same order as kThemes.
+constexpr Theme kThemeTable[] = {
+    // Dark
+    {{0, 0, 0}, {240, 240, 235}, {140, 140, 140}, {90, 90, 90}, {55, 55, 55}, {255, 72, 56}, {32, 32, 32}, false},
+    // Light
+    {{250, 250, 247}, {20, 20, 20}, {105, 105, 105}, {150, 150, 150}, {205, 205, 200}, {215, 45, 35}, {228, 228, 222}, false},
+    // Sepia
+    {{244, 234, 212}, {62, 46, 30}, {125, 104, 80}, {160, 140, 112}, {212, 196, 166}, {186, 66, 36}, {230, 216, 188}, false},
+    // E-ink: paper grey and black only, so the focus letter is underlined instead of coloured
+    {{226, 226, 218}, {12, 12, 12}, {80, 80, 80}, {120, 120, 116}, {175, 175, 168}, {12, 12, 12}, {200, 200, 192}, true},
+    // Night: dim red on black, easy on the eyes in the dark
+    {{0, 0, 0}, {200, 70, 50}, {130, 45, 32}, {90, 32, 24}, {55, 20, 15}, {255, 165, 60}, {34, 12, 8}, false},
+};
 
 uint16_t kBackground, kText, kDim, kHint, kFaint, kAccent, kSelected;
+bool kUnderlinePivot = false;
+
+struct Layout {
+    int w, h;
+    bool portrait;
+    // Reader
+    int anchorX, guideTop, guideBottom;
+    // Lists
+    int listTop, rowH, visibleRows;
+};
+Layout L{240, 135, false, 88, 30, 100, 26, 26, 4};
+
+void computeLayout(bool portrait) {
+    if (portrait) {
+        L = {135, 240, true, 52, 78, 146, 42, 28, 7};
+    } else {
+        L = {240, 135, false, 88, 30, 100, 26, 26, 4};
+    }
+}
 
 struct WordFont {
     const lgfx::IFont* font;
@@ -29,7 +57,10 @@ const WordFont kWordFonts[] = {
     {&fonts::FreeSansBold18pt7b, 25},
     {&fonts::FreeSansBold12pt7b, 17},
     {&fonts::FreeSansBold9pt7b, 13},
+    {&fonts::FreeSans9pt7b, 13},  // last resort for long words on the narrow screen
 };
+constexpr size_t kFontCount = sizeof(kWordFonts) / sizeof(kWordFonts[0]);
+size_t largestFont = 1;
 
 String formatDuration(uint32_t seconds) {
     if (seconds < 60) return "<1m";
@@ -45,6 +76,32 @@ String fitText(const String& text, int maxWidth) {
     return cut + "...";
 }
 
+// Centered text broken into lines at spaces. Returns the y after the last line.
+int drawWrapped(const String& text, int cx, int y, int maxWidth, int lineH) {
+    canvas.setTextDatum(textdatum_t::top_center);
+    String line;
+    int start = 0;
+    while (start <= static_cast<int>(text.length())) {
+        int space = text.indexOf(' ', start);
+        if (space < 0) space = text.length();
+        const String word = text.substring(start, space);
+        const String candidate = line.isEmpty() ? word : line + " " + word;
+        if (!line.isEmpty() && canvas.textWidth(candidate) > maxWidth) {
+            canvas.drawString(line, cx, y);
+            y += lineH;
+            line = word;
+        } else {
+            line = candidate;
+        }
+        start = space + 1;
+    }
+    if (!line.isEmpty()) {
+        canvas.drawString(fitText(line, maxWidth), cx, y);
+        y += lineH;
+    }
+    return y;
+}
+
 void drawBattery(int right, int y) {
     const int level = M5.Power.getBatteryLevel();
     if (level < 0) return;
@@ -56,10 +113,11 @@ void drawBattery(int right, int y) {
 }
 
 void drawGuides() {
-    canvas.drawFastHLine(12, kGuideTop, kW - 24, kFaint);
-    canvas.drawFastHLine(12, kGuideBottom, kW - 24, kFaint);
-    canvas.fillRect(kAnchorX - 1, kGuideTop, 2, 7, kAccent);
-    canvas.fillRect(kAnchorX - 1, kGuideBottom - 6, 2, 7, kAccent);
+    const int margin = L.portrait ? 8 : 12;
+    canvas.drawFastHLine(margin, L.guideTop, L.w - 2 * margin, kFaint);
+    canvas.drawFastHLine(margin, L.guideBottom, L.w - 2 * margin, kFaint);
+    canvas.fillRect(L.anchorX - 1, L.guideTop, 2, 7, kAccent);
+    canvas.fillRect(L.anchorX - 1, L.guideBottom - 6, 2, 7, kAccent);
 }
 
 void drawWord(const String& word, int pivot) {
@@ -69,108 +127,112 @@ void drawWord(const String& word, int pivot) {
     const String after = word.substring(pivot + 1);
 
     // Largest font that keeps the word on screen with the focus letter on the anchor.
-    constexpr size_t kFontCount = sizeof(kWordFonts) / sizeof(kWordFonts[0]);
     const WordFont* chosen = &kWordFonts[kFontCount - 1];
     for (size_t i = largestFont; i < kFontCount; ++i) {
         const auto& f = kWordFonts[i];
         canvas.setFont(f.font);
         const int left = canvas.textWidth(before) + canvas.textWidth(focus) / 2;
         const int right = canvas.textWidth(focus) - canvas.textWidth(focus) / 2 + canvas.textWidth(after);
-        if (left <= kAnchorX - 4 && right <= kW - kAnchorX - 4) {
+        if (left <= L.anchorX - 3 && right <= L.w - L.anchorX - 3) {
             chosen = &f;
             break;
         }
     }
     canvas.setFont(chosen->font);
     canvas.setTextDatum(textdatum_t::baseline_left);
-    const int baseline = kWordMiddle + chosen->capHeight / 2;
-    int x = kAnchorX - canvas.textWidth(before) - canvas.textWidth(focus) / 2;
+    const int baseline = (L.guideTop + L.guideBottom) / 2 + chosen->capHeight / 2;
+    int x = L.anchorX - canvas.textWidth(before) - canvas.textWidth(focus) / 2;
     canvas.setTextColor(kText);
     canvas.drawString(before, x, baseline);
     x += canvas.textWidth(before);
     canvas.setTextColor(kAccent);
     canvas.drawString(focus, x, baseline);
+    if (kUnderlinePivot) canvas.fillRect(x, baseline + 4, canvas.textWidth(focus), 3, kAccent);
     x += canvas.textWidth(focus);
     canvas.setTextColor(kText);
     canvas.drawString(after, x, baseline);
 }
 
-} // namespace
-
-void begin(uint8_t rotation) {
-    M5.Display.setRotation(rotation);
-    canvas.setPsram(true);
-    canvas.setColorDepth(16);
-    canvas.createSprite(kW, kH);
-    kBackground = canvas.color565(0, 0, 0);
-    kText = canvas.color565(240, 240, 235);
-    kDim = canvas.color565(140, 140, 140);
-    kHint = canvas.color565(90, 90, 90);
-    kFaint = canvas.color565(55, 55, 55);
-    kAccent = canvas.color565(255, 72, 56);
-    kSelected = canvas.color565(32, 32, 32);
+void drawSelectedRow(int y) {
+    canvas.fillRoundRect(4, y, L.w - 8, L.rowH - 2, 4, kSelected);
+    canvas.fillRect(4, y + 4, 3, L.rowH - 10, kAccent);
 }
 
-void setRotation(uint8_t rotation) { M5.Display.setRotation(rotation); }
+// Header for lists: title on the left, battery on the right, hint beside or below.
+void drawListHeader(const String& title, const String& hint, bool hintIsActive) {
+    canvas.setFont(&fonts::Font2);
+    canvas.setTextDatum(textdatum_t::top_left);
+    canvas.setTextColor(kDim);
+    if (L.portrait) {
+        canvas.drawString(fitText(title, L.w - 40), 8, 5);
+        canvas.setTextColor(hintIsActive ? kAccent : kHint);
+        canvas.drawString(fitText(hint, L.w - 12), 8, 22);
+    } else {
+        canvas.setTextDatum(textdatum_t::top_right);
+        canvas.setTextColor(hintIsActive ? kAccent : kHint);
+        canvas.drawString(hint, L.w - 30, 5);
+        const int hintW = canvas.textWidth(hint);
+        canvas.setTextDatum(textdatum_t::top_left);
+        canvas.setTextColor(kDim);
+        canvas.drawString(fitText(title, L.w - 46 - hintW), 8, 5);
+    }
+    drawBattery(L.w - 4, 8);
+}
+
+void drawScrollHint(size_t first, size_t count) {
+    if (first + L.visibleRows < count)
+        canvas.fillTriangle(L.w / 2 - 4, L.h - 4, L.w / 2 + 4, L.h - 4, L.w / 2, L.h, kDim);
+}
+
+size_t firstVisible(size_t selected) {
+    return selected >= static_cast<size_t>(L.visibleRows) ? selected - L.visibleRows + 1 : 0;
+}
+
+void applyTheme(uint8_t theme) {
+    const Theme& t = kThemeTable[std::min<uint8_t>(theme, kThemeCount - 1)];
+    auto c = [](const uint8_t rgb[3]) { return canvas.color565(rgb[0], rgb[1], rgb[2]); };
+    kBackground = c(t.bg);
+    kText = c(t.text);
+    kDim = c(t.dim);
+    kHint = c(t.hint);
+    kFaint = c(t.faint);
+    kAccent = c(t.accent);
+    kSelected = c(t.selected);
+    kUnderlinePivot = t.underlinePivot;
+}
+
+} // namespace
+
+void begin() {
+    canvas.setPsram(true);
+    canvas.setColorDepth(16);
+    applyTheme(0);
+}
+
+void setOrientation(bool isPortrait, bool flipped) {
+    computeLayout(isPortrait);
+    M5.Display.setRotation(isPortrait ? (flipped ? 2 : 0) : (flipped ? 3 : 1));
+    canvas.deleteSprite();
+    canvas.createSprite(L.w, L.h);
+}
+
+bool portrait() { return L.portrait; }
+
+size_t maxWordChunk() { return L.portrait ? 9 : rsvp::Reader::kMaxChunk; }
 
 void setTextSize(uint8_t size) {
     // Extra large starts at the 24pt font, Small at 9pt.
     largestFont = kTextSizeCount - 1 - std::min<uint8_t>(size, kTextSizeCount - 1);
 }
 
-void drawMenu(const String& title, const String& hint, const std::vector<MenuItem>& items, size_t selected,
-              bool editing) {
-    constexpr int kRowH = 26;
-    constexpr int kTop = 26;
-    constexpr int kVisible = 4;
-
-    canvas.fillScreen(kBackground);
-    canvas.setFont(&fonts::Font2);
-    canvas.setTextDatum(textdatum_t::top_left);
-    canvas.setTextColor(kDim);
-    canvas.drawString(title, 8, 5);
-    canvas.setTextDatum(textdatum_t::top_right);
-    canvas.setTextColor(editing ? kAccent : kHint);
-    canvas.drawString(hint, kW - 6, 5);
-
-    const size_t first = selected >= kVisible ? selected - kVisible + 1 : 0;
-    for (size_t i = first; i < items.size() && i < first + kVisible; ++i) {
-        const int y = kTop + static_cast<int>(i - first) * kRowH;
-        const int mid = y + kRowH / 2 - 1;
-        const bool isSelected = i == selected;
-        if (isSelected) {
-            canvas.fillRoundRect(4, y, kW - 8, kRowH - 2, 4, kSelected);
-            canvas.fillRect(4, y + 4, 3, kRowH - 10, kAccent);
-        }
-        int valueWidth = 0;
-        if (!items[i].value.isEmpty()) {
-            canvas.setFont(&fonts::Font2);
-            valueWidth = canvas.textWidth(items[i].value);
-            const int right = kW - 14;
-            if (isSelected && editing) {
-                canvas.drawRoundRect(right - valueWidth - 8, y + 3, valueWidth + 14, kRowH - 8, 4, kAccent);
-                canvas.setTextColor(kText);
-            } else {
-                canvas.setTextColor(kDim);
-            }
-            canvas.setTextDatum(textdatum_t::middle_right);
-            canvas.drawString(items[i].value, right, mid);
-            valueWidth += 16;
-        }
-        canvas.setFont(isSelected ? &fonts::FreeSansBold9pt7b : &fonts::FreeSans9pt7b);
-        canvas.setTextDatum(textdatum_t::middle_left);
-        canvas.setTextColor(isSelected ? kText : kDim);
-        canvas.drawString(fitText(items[i].label, kW - 26 - valueWidth), 14, mid);
-    }
-    if (first + kVisible < items.size()) canvas.fillTriangle(kW / 2 - 4, kH - 4, kW / 2 + 4, kH - 4, kW / 2, kH, kDim);
-    canvas.pushSprite(0, 0);
-}
+void setTheme(uint8_t theme) { applyTheme(theme); }
 
 void drawReader(const rsvp::Reader& reader, const String& title) {
     canvas.fillScreen(kBackground);
+    const int percent = static_cast<int>(reader.progress() * 100);
 
     // Progress along the top edge.
-    canvas.fillRect(0, 0, static_cast<int>(kW * reader.progress()), 2, kAccent);
+    canvas.fillRect(0, 0, static_cast<int>(L.w * reader.progress()), 2, kAccent);
 
     if (!reader.playing()) {
         canvas.setFont(&fonts::Font2);
@@ -178,77 +240,127 @@ void drawReader(const rsvp::Reader& reader, const String& title) {
         canvas.setTextColor(kDim);
         String t = title;
         if (t.endsWith(".txt")) t.remove(t.length() - 4);
-        const String stats = String(static_cast<int>(reader.progress() * 100)) + "%  " + String(reader.wpm()) + "wpm";
-        canvas.setTextDatum(textdatum_t::top_right);
-        canvas.drawString(stats, kW - 28, 8);
-        canvas.setTextDatum(textdatum_t::top_left);
-        canvas.drawString(fitText(t, kW - 40 - canvas.textWidth(stats) - 6), 6, 8);
-        drawBattery(kW - 4, 11);
+        const String stats = String(percent) + "%  " + String(reader.wpm()) + "wpm";
+        if (L.portrait) {
+            canvas.drawString(fitText(t, L.w - 36), 6, 8);
+            canvas.setTextColor(kHint);
+            canvas.drawString(stats, 6, 26);
+        } else {
+            canvas.setTextDatum(textdatum_t::top_right);
+            canvas.drawString(stats, L.w - 28, 8);
+            canvas.setTextDatum(textdatum_t::top_left);
+            canvas.drawString(fitText(t, L.w - 40 - canvas.textWidth(stats) - 6), 6, 8);
+        }
+        drawBattery(L.w - 4, 11);
     }
 
     drawGuides();
     drawWord(reader.display().c_str(), reader.pivot());
 
     canvas.setFont(&fonts::Font2);
+    canvas.setTextDatum(textdatum_t::bottom_center);
     if (!reader.playing()) {
         // Paused: show what the buttons do instead of stats.
-        canvas.setTextDatum(textdatum_t::bottom_center);
-        canvas.setTextColor(reader.finished() ? kAccent : kDim);
-        canvas.drawString(reader.finished() ? "the end   A: read again" : "A play   B back   hold A: menu",
-                          kW / 2, kH - 6);
+        if (reader.finished()) {
+            canvas.setTextColor(kAccent);
+            if (L.portrait) {
+                canvas.drawString("the end", L.w / 2, L.h - 26);
+                canvas.drawString("A: read again", L.w / 2, L.h - 8);
+            } else {
+                canvas.drawString("the end   A: read again", L.w / 2, L.h - 6);
+            }
+        } else if (L.portrait) {
+            canvas.setTextColor(kDim);
+            canvas.drawString("A  play", L.w / 2, L.h - 44);
+            canvas.drawString("B  back a sentence", L.w / 2, L.h - 26);
+            canvas.drawString("hold A  menu", L.w / 2, L.h - 8);
+        } else {
+            canvas.setTextColor(kDim);
+            canvas.drawString("A play   B back   hold A: menu", L.w / 2, L.h - 6);
+        }
         canvas.pushSprite(0, 0);
         return;
     }
-    canvas.setTextColor(kDim);
-    canvas.setTextDatum(textdatum_t::bottom_left);
-    canvas.drawString(String(reader.wpm()) + " wpm", 6, kH - 6);
-    canvas.setTextDatum(textdatum_t::bottom_center);
-    canvas.drawString(String(static_cast<int>(reader.progress() * 100)) + "%", kW / 2, kH - 6);
-    canvas.setTextDatum(textdatum_t::bottom_right);
-    canvas.drawString(formatDuration(reader.secondsLeft()) + " left", kW - 6, kH - 6);
 
+    canvas.setTextColor(kDim);
+    const String left = formatDuration(reader.secondsLeft()) + " left";
+    if (L.portrait) {
+        canvas.drawString(String(reader.wpm()) + " wpm", L.w / 2, L.h - 26);
+        canvas.setTextColor(kHint);
+        canvas.drawString(String(percent) + "%   " + left, L.w / 2, L.h - 8);
+    } else {
+        canvas.setTextDatum(textdatum_t::bottom_left);
+        canvas.drawString(String(reader.wpm()) + " wpm", 6, L.h - 6);
+        canvas.setTextDatum(textdatum_t::bottom_center);
+        canvas.drawString(String(percent) + "%", L.w / 2, L.h - 6);
+        canvas.setTextDatum(textdatum_t::bottom_right);
+        canvas.drawString(left, L.w - 6, L.h - 6);
+    }
     canvas.pushSprite(0, 0);
 }
 
 void drawLibrary(const std::vector<LibraryItem>& items, size_t selected) {
-    constexpr int kRowH = 26;
-    constexpr int kTop = 26;
-    constexpr int kVisible = 4;
-
     canvas.fillScreen(kBackground);
-    canvas.setFont(&fonts::Font2);
-    canvas.setTextDatum(textdatum_t::top_left);
-    canvas.setTextColor(kDim);
-    canvas.drawString("Library", 8, 5);
-    canvas.setTextDatum(textdatum_t::top_right);
-    canvas.setTextColor(kHint);
-    canvas.drawString("A open   B next", kW - 30, 5);
-    drawBattery(kW - 4, 8);
+    drawListHeader("Library", "A open   B next", false);
 
-    const size_t first = selected >= kVisible ? selected - kVisible + 1 : 0;
-    for (size_t i = first; i < items.size() && i < first + kVisible; ++i) {
-        const int y = kTop + static_cast<int>(i - first) * kRowH;
+    const size_t first = firstVisible(selected);
+    for (size_t i = first; i < items.size() && i < first + L.visibleRows; ++i) {
+        const int y = L.listTop + static_cast<int>(i - first) * L.rowH;
+        const int mid = y + L.rowH / 2 - 1;
         const bool isSelected = i == selected;
-        if (isSelected) {
-            canvas.fillRoundRect(4, y, kW - 8, kRowH - 2, 4, kSelected);
-            canvas.fillRect(4, y + 4, 3, kRowH - 10, kAccent);
-        }
-        canvas.setFont(isSelected ? &fonts::FreeSansBold9pt7b : &fonts::FreeSans9pt7b);
-        canvas.setTextDatum(textdatum_t::middle_left);
-        canvas.setTextColor(items[i].percent < 0 ? kAccent : (isSelected ? kText : kDim));
-        const int rightSpace = items[i].percent >= 0 ? 44 : 12;
-        canvas.drawString(fitText(items[i].title, kW - 16 - rightSpace), 14, y + kRowH / 2 - 1);
-        if (items[i].percent >= 0) {
+        if (isSelected) drawSelectedRow(y);
+        const bool isBook = items[i].percent >= 0;
+        int rightSpace = 12;
+        if (isBook) {
             canvas.setFont(&fonts::Font2);
             canvas.setTextDatum(textdatum_t::middle_right);
             canvas.setTextColor(kDim);
-            canvas.drawString(String(items[i].percent) + "%", kW - 12, y + kRowH / 2 - 1);
+            const String value = String(items[i].percent) + "%";
+            canvas.drawString(value, L.w - 12, mid);
+            rightSpace = canvas.textWidth(value) + 18;
         }
+        canvas.setFont(isSelected ? &fonts::FreeSansBold9pt7b : &fonts::FreeSans9pt7b);
+        canvas.setTextDatum(textdatum_t::middle_left);
+        canvas.setTextColor(!isBook ? kAccent : (isSelected ? kText : kDim));
+        canvas.drawString(fitText(items[i].title, L.w - 14 - rightSpace), 14, mid);
     }
+    drawScrollHint(first, items.size());
+    canvas.pushSprite(0, 0);
+}
 
-    // Scroll hint when more rows are hidden below.
-    if (first + kVisible < items.size()) canvas.fillTriangle(kW / 2 - 4, kH - 4, kW / 2 + 4, kH - 4, kW / 2, kH, kDim);
+void drawMenu(const String& title, const String& hint, const std::vector<MenuItem>& items, size_t selected,
+              bool editing) {
+    canvas.fillScreen(kBackground);
+    drawListHeader(title, hint, editing);
 
+    const size_t first = firstVisible(selected);
+    for (size_t i = first; i < items.size() && i < first + L.visibleRows; ++i) {
+        const int y = L.listTop + static_cast<int>(i - first) * L.rowH;
+        const int mid = y + L.rowH / 2 - 1;
+        const bool isSelected = i == selected;
+        if (isSelected) drawSelectedRow(y);
+        int valueWidth = 0;
+        if (!items[i].value.isEmpty()) {
+            canvas.setFont(&fonts::Font2);
+            const String value = fitText(items[i].value, L.w / 2 - 10);
+            valueWidth = canvas.textWidth(value);
+            const int right = L.w - 14;
+            if (isSelected && editing) {
+                canvas.drawRoundRect(right - valueWidth - 6, y + 3, valueWidth + 12, L.rowH - 8, 4, kAccent);
+                canvas.setTextColor(kText);
+            } else {
+                canvas.setTextColor(kDim);
+            }
+            canvas.setTextDatum(textdatum_t::middle_right);
+            canvas.drawString(value, right, mid);
+            valueWidth += 14;
+        }
+        canvas.setFont(isSelected ? &fonts::FreeSansBold9pt7b : &fonts::FreeSans9pt7b);
+        canvas.setTextDatum(textdatum_t::middle_left);
+        canvas.setTextColor(isSelected ? kText : kDim);
+        canvas.drawString(fitText(items[i].label, L.w - 26 - valueWidth), 14, mid);
+    }
+    drawScrollHint(first, items.size());
     canvas.pushSprite(0, 0);
 }
 
@@ -258,53 +370,74 @@ void drawUpload(const String& ssid, const String& password, const String& url, b
 
     // Step 1 shows a Wi-Fi join code; once a phone is connected, a link to the page.
     const String code = phoneJoined ? url : "WIFI:T:WPA;S:" + ssid + ";P:" + password + ";;";
-    canvas.fillRect(4, 8, 118, 118, TFT_WHITE);
-    canvas.qrcode(code.c_str(), 9, 13, 108, 3);
+    const int box = L.portrait ? 119 : 118;
+    const int boxX = L.portrait ? (L.w - box) / 2 : 4;
+    const int boxY = L.portrait ? 6 : 8;
+    canvas.fillRect(boxX, boxY, box, box, TFT_WHITE);
+    canvas.qrcode(code.c_str(), boxX + 5, boxY + 5, box - 10, 3);
 
-    const int x = 130;
+    const int x = L.portrait ? 8 : 130;
+    const int textW = L.w - x - 4;
+    const int line = 17;
+    int y = L.portrait ? boxY + box + 6 : 8;
+
     canvas.setTextDatum(textdatum_t::top_left);
     canvas.setFont(&fonts::FreeSansBold9pt7b);
     canvas.setTextColor(kText);
-    canvas.drawString("Add books", x, 8);
+    canvas.drawString("Add books", x, y);
+    y += line + 6;
 
     canvas.setFont(&fonts::Font2);
     if (!phoneJoined) {
         canvas.setTextColor(kDim);
-        canvas.drawString("1. Scan to join", x, 32);
+        canvas.drawString("1. Scan to join", x, y);
+        y += line;
         canvas.setTextColor(kText);
-        canvas.drawString(fitText(ssid, kW - x - 4), x, 50);
+        canvas.drawString(fitText(ssid, textW), x, y);
+        y += line;
         canvas.setTextColor(kDim);
-        canvas.drawString("password", x, 68);
+        canvas.drawString("password", x, y);
         canvas.setTextColor(kText);
-        canvas.drawString(password, x, 84);
+        if (L.portrait) {
+            canvas.drawString(password, x + canvas.textWidth("password  "), y);
+        } else {
+            y += line - 2;
+            canvas.drawString(password, x, y);
+        }
     } else {
         canvas.setTextColor(kDim);
-        canvas.drawString("2. Scan or open", x, 32);
+        canvas.drawString("2. Scan or open", x, y);
+        y += line;
         canvas.setTextColor(kText);
-        canvas.drawString(url.substring(7), x, 50);  // without "http://"
+        canvas.drawString(url.substring(7), x, y);  // without "http://"
+        y += line;
         canvas.setTextColor(kDim);
-        canvas.drawString("in your browser", x, 68);
+        canvas.drawString("in your browser", x, y);
     }
 
+    // The way out always stays visible, with the latest upload news above it.
+    const int bottom = L.portrait ? L.h - 4 : L.h - 6;
+    canvas.setTextDatum(textdatum_t::bottom_left);
     if (!status.isEmpty()) {
         canvas.setTextColor(kAccent);
-        canvas.drawString(fitText(status, kW - x - 4), x, 92);
+        canvas.drawString(fitText(status, textW), x, bottom - 19);
     }
     canvas.setTextColor(kText);
-    canvas.drawString("Press A: done", x, 112);
-
+    canvas.drawString("Press A: done", x, bottom);
     canvas.pushSprite(0, 0);
 }
 
 void drawMessage(const String& title, const String& body) {
     canvas.fillScreen(kBackground);
-    canvas.setTextDatum(textdatum_t::middle_center);
     canvas.setFont(&fonts::FreeSansBold12pt7b);
     canvas.setTextColor(kAccent);
-    canvas.drawString(title, kW / 2, 50);
+    int y = drawWrapped(title, L.w / 2, L.portrait ? 70 : 28, L.w - 16, 26);
     canvas.setFont(&fonts::Font2);
     canvas.setTextColor(kDim);
-    canvas.drawString(fitText(body, kW - 16), kW / 2, 85);
+    drawWrapped(body, L.w / 2, y + 8, L.w - 20, 18);
+    canvas.setTextColor(kHint);
+    canvas.setTextDatum(textdatum_t::bottom_center);
+    canvas.drawString("press A", L.w / 2, L.h - 8);
     canvas.pushSprite(0, 0);
 }
 

@@ -12,7 +12,7 @@ namespace {
 constexpr const char* kBooksDir = "/books";
 constexpr size_t kMaxNameChars = 40;
 
-Preferences settings;   // "reader": wpm, last book, rotation
+Preferences settings;   // "reader": wpm, last book, display and theme settings
 Preferences positions;  // "positions": one key per book
 
 // NVS keys are limited to 15 characters, so books are keyed by a hash of their name.
@@ -130,8 +130,17 @@ void setWpm(uint16_t wpm) {
     if (settings.getUShort("wpm", 0) != wpm) settings.putUShort("wpm", wpm);
 }
 
-uint8_t rotation() { return settings.getUChar("rot", 1); }
-void setRotation(uint8_t rotation) { settings.putUChar("rot", rotation); }
+bool portrait() { return settings.getBool("portrait", false); }
+void setPortrait(bool portrait) { settings.putBool("portrait", portrait); }
+
+// Older firmware stored a display rotation, where 3 meant flipped landscape.
+bool flipped() { return settings.getBool("flipped", settings.getUChar("rot", 1) == 3); }
+void setFlipped(bool flipped) { settings.putBool("flipped", flipped); }
+
+uint8_t theme() { return settings.getUChar("theme", 0); }
+void setTheme(uint8_t theme) {
+    if (settings.getUChar("theme", 255) != theme) settings.putUChar("theme", theme);
+}
 
 uint8_t brightness() { return settings.getUChar("bright", 3); }
 void setBrightness(uint8_t level) {

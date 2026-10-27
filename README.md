@@ -8,10 +8,11 @@ A pocket speed reader for the **M5StickS3**. Books play one word at a time (RSVP
 - **Natural pacing.** Words get extra time for length, complexity (syllables, numbers, all-caps, URLs) and punctuation, with longer pauses at sentence and paragraph ends. Abbreviations like "Mr." and "e.g." don't count as sentence ends. Reading eases in over the first few words after you press play.
 - **100 to 1000 words per minute**, in steps of 25.
 - **Chapters.** Jump to any chapter from the menu. Chapters come from the EPUB's table of contents (or its headings), and from lines like "Chapter 3" in text files.
-- **Settings** for brightness, reading speed and text size (Small to Extra large).
+- **Settings** for theme (Dark, Light, Sepia, E-ink, Night), brightness, reading speed, text size (Small to Extra large) and orientation (horizontal or vertical). Every screen has a layout for both orientations.
+- **Sleep.** The power button puts the stick into deep sleep; press the front or side button to wake it where you left off. It also sleeps by itself after ten idle minutes.
 - **Resume everywhere.** Your place in each book and your speed are saved; the stick reopens the last book on boot.
 - **Add books over Wi-Fi.** The stick shows a QR code to join its network, then a second one for the upload page. EPUBs are converted to text in your browser, so it works without internet.
-- **Progress, time left and battery** on screen; the screen dims after a minute idle and the stick powers off after ten.
+- **Progress, time left and battery** on screen; the screen dims after a minute idle.
 
 ## Controls
 
@@ -26,7 +27,7 @@ The front button is **A**, the side button is **B**.
 | Chapters | A: jump there | A: back to menu |
 | Settings | A: change the selected setting, then B: up, hold B: down, A: done | A: back |
 | Add books | A or B: done (or tap **Done** on the page) | |
-| Anywhere | | A + B: flip the screen |
+| Anywhere | Power: sleep (A or B wakes) | A + B: flip the screen |
 
 ## Build and flash
 

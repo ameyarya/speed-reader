@@ -34,8 +34,15 @@ void setLastBook(const String& name);
 uint16_t wpm();
 void setWpm(uint16_t wpm);
 
-uint8_t rotation();
-void setRotation(uint8_t rotation);
+bool portrait();
+void setPortrait(bool portrait);
+// Upside down (hold A+B to flip).
+bool flipped();
+void setFlipped(bool flipped);
+
+// Index into ui::kThemes.
+uint8_t theme();
+void setTheme(uint8_t theme);
 
 // 1 (dimmest) to 5.
 uint8_t brightness();

@@ -5,8 +5,11 @@
 //           playing: B faster, hold B slower
 //           paused:  B back a sentence, hold B forward a sentence
 // Settings: A on a setting to change it, then B up, hold B down, A done
-// Anywhere: hold A+B to flip the screen
+// Anywhere: hold A+B to flip the screen, power button to sleep (A or B wakes)
 #include <M5Unified.h>
+#include <driver/gpio.h>
+#include <driver/rtc_io.h>
+#include <esp_sleep.h>
 
 #include "library.h"
 #include "rsvp.h"
@@ -22,7 +25,11 @@ constexpr uint8_t kBrightnessLevels[] = {0, 12, 40, 90, 160, 255};
 constexpr uint8_t kMaxBrightness = 5;
 constexpr uint8_t kDimBrightness = 8;
 constexpr uint32_t kDimAfterMs = 60 * 1000;
-constexpr uint32_t kPowerOffAfterMs = 10 * 60 * 1000;
+constexpr uint32_t kSleepAfterMs = 10 * 60 * 1000;
+// StickS3 wiring: front button A, side button B, display backlight.
+constexpr gpio_num_t kButtonAPin = GPIO_NUM_11;
+constexpr gpio_num_t kButtonBPin = GPIO_NUM_12;
+constexpr gpio_num_t kBacklightPin = GPIO_NUM_38;
 constexpr uint32_t kSaveEveryMs = 20 * 1000;
 constexpr uint32_t kRepeatMs = 280;
 constexpr uint32_t kFlipHoldMs = 800;
@@ -43,7 +50,9 @@ size_t menuSelected = 0;
 size_t chapterSelected = 0;
 
 // Settings
-enum SettingEntry : size_t { kSetBrightness, kSetSpeed, kSetTextSize, kSetBack, kSetCount };
+enum SettingEntry : size_t {
+    kSetTheme, kSetBrightness, kSetSpeed, kSetTextSize, kSetOrientation, kSetBack, kSetCount
+};
 size_t settingSelected = 0;
 bool editingSetting = false;
 Mode settingsReturn = Mode::Library;
@@ -51,7 +60,9 @@ Mode settingsReturn = Mode::Library;
 Mode messageReturn = Mode::Library;
 String messageTitle, messageBody;
 
-uint8_t rotation = 1;
+bool portrait = false;
+bool flipped = false;
+uint8_t theme = 0;
 uint8_t brightness = 3;
 uint8_t textSize = 2;
 uint16_t wpm = 300;
@@ -80,6 +91,11 @@ String titleOf(const String& name) { return name.endsWith(".txt") ? name.substri
 void step(size_t& index, size_t count, int direction) { index = (index + count + direction) % count; }
 
 void applyBrightness() { M5.Display.setBrightness(kBrightnessLevels[brightness]); }
+
+void applyOrientation() {
+    ui::setOrientation(portrait, flipped);
+    reader.setMaxChunk(ui::maxWordChunk());
+}
 
 void refreshBooks() {
     books = library::list();
@@ -119,6 +135,7 @@ void openBook(const String& name) {
     }
     bookName = name;
     reader.setWpm(wpm);
+    reader.setMaxChunk(ui::maxWordChunk());
     reader.open(bookData, size, library::savedPosition(name));
     library::setLastBook(name);
     mode = Mode::Reading;
@@ -166,6 +183,8 @@ void closeSettings() {
     library::setBrightness(brightness);
     library::setWpm(wpm);
     library::setTextSize(textSize);
+    library::setTheme(theme);
+    library::setPortrait(portrait);
     mode = settingsReturn;
     redraw = true;
 }
@@ -189,6 +208,14 @@ void leaveUpload() {
 
 void changeSetting(int direction) {
     switch (settingSelected) {
+    case kSetTheme:
+        theme = static_cast<uint8_t>((theme + ui::kThemeCount + direction) % ui::kThemeCount);
+        ui::setTheme(theme);
+        break;
+    case kSetOrientation:
+        portrait = !portrait;
+        applyOrientation();
+        break;
     case kSetBrightness:
         brightness = static_cast<uint8_t>(std::clamp<int>(brightness + direction, 1, kMaxBrightness));
         applyBrightness();
@@ -241,14 +268,18 @@ void drawChapters() {
 }
 
 void drawSettings() {
+    const bool narrow = ui::portrait();
     std::vector<ui::MenuItem> items = {
+        {"Theme", ui::kThemes[theme]},
         {"Brightness", String(brightness) + " of " + String(kMaxBrightness)},
-        {"Reading speed", String(wpm) + " wpm"},
+        {narrow ? "Speed" : "Reading speed", String(wpm) + " wpm"},
         {"Text size", ui::kTextSizes[textSize]},
+        {"Orientation", portrait ? "Vertical" : "Horizontal"},
         {"Back", ""},
     };
-    ui::drawMenu("Settings", editingSetting ? "B up  hold B down  A done" : "A change   hold A: back", items,
-                 settingSelected, editingSetting);
+    const char* hint = editingSetting ? (narrow ? "B up  hold B down" : "B up  hold B down  A done")
+                                      : (narrow ? "A change  hold A back" : "A change   hold A: back");
+    ui::drawMenu("Settings", hint, items, settingSelected, editingSetting);
 }
 
 void draw() {
@@ -365,15 +396,52 @@ void onBHoldRepeat() {
 }
 
 void flipScreen() {
-    rotation = rotation == 1 ? 3 : 1;
-    library::setRotation(rotation);
-    ui::setRotation(rotation);
+    flipped = !flipped;
+    library::setFlipped(flipped);
+    applyOrientation();
     redraw = true;
+}
+
+// Deep sleep until A or B is pressed. Waking restarts the firmware, which
+// reopens the book paused where you left off.
+void sleepNow() {
+    closeBook();
+    upload::end();
+    showMessage("Sleeping", "Press the front button to wake", mode);
+    draw();
+    delay(900);
+
+    // Wait for the buttons to be let go, or they would wake it straight away.
+    for (int i = 0; i < 300 && (M5.BtnA.isPressed() || M5.BtnB.isPressed()); ++i) {
+        delay(10);
+        M5.update();
+    }
+    M5.Display.setBrightness(0);
+    M5.Display.sleep();
+    M5.Display.waitDisplay();
+
+    // Keep the backlight off while asleep.
+    gpio_set_direction(kBacklightPin, GPIO_MODE_OUTPUT);
+    gpio_set_level(kBacklightPin, 0);
+    gpio_hold_en(kBacklightPin);
+    gpio_deep_sleep_hold_en();
+
+    for (gpio_num_t pin : {kButtonAPin, kButtonBPin}) {
+        rtc_gpio_pullup_en(pin);
+        rtc_gpio_pulldown_dis(pin);
+    }
+    esp_sleep_enable_ext1_wakeup_io((1ULL << kButtonAPin) | (1ULL << kButtonBPin), ESP_EXT1_WAKEUP_ANY_LOW);
+    esp_deep_sleep_start();
 }
 
 void handleInput(uint32_t now) {
     auto& a = M5.BtnA;
     auto& b = M5.BtnB;
+
+    if (M5.BtnPWR.wasClicked()) {
+        sleepNow();
+        return;
+    }
 
     if (a.wasPressed() || b.wasPressed()) {
         lastInputMs = now;
@@ -425,28 +493,37 @@ void handleIdle(uint32_t now) {
         dimmed = true;
         M5.Display.setBrightness(std::min(kDimBrightness, kBrightnessLevels[brightness]));
     }
-    if (idle >= kPowerOffAfterMs && mode != Mode::Upload) {
-        closeBook();
-        M5.Display.setBrightness(0);
-        M5.Power.powerOff();
-    }
+    if (idle >= kSleepAfterMs && mode != Mode::Upload) sleepNow();
 }
 
 } // namespace
 
 void setup() {
+    // Undo what sleepNow() set up, so the pins work normally again.
+    const bool wokeByButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
+    gpio_hold_dis(kBacklightPin);
+    gpio_deep_sleep_hold_dis();
+    rtc_gpio_deinit(kButtonAPin);
+    rtc_gpio_deinit(kButtonBPin);
+
     auto cfg = M5.config();
     M5.begin(cfg);
     Serial.begin(115200);
+    // The press that woke the stick shouldn't also count as a button press.
+    ignoreUntilRelease = wokeByButton;
 
     const bool storageOk = library::begin();
-    rotation = library::rotation();
+    portrait = library::portrait();
+    flipped = library::flipped();
+    theme = std::min<uint8_t>(library::theme(), ui::kThemeCount - 1);
     brightness = std::clamp<uint8_t>(library::brightness(), 1, kMaxBrightness);
     textSize = std::min<uint8_t>(library::textSize(), ui::kTextSizeCount - 1);
     wpm = library::wpm();
     applyBrightness();
-    ui::begin(rotation);
+    ui::begin();
+    ui::setTheme(theme);
     ui::setTextSize(textSize);
+    applyOrientation();
     lastInputMs = millis();
 
     if (!storageOk) {

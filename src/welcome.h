@@ -17,7 +17,9 @@ In any list, press the side button to move down and hold it to move up. Press th
 
 To add books, choose "Add books" in the library. Join the Wi-Fi network shown on screen, then open the page it shows in your browser and drop in EPUB or text files.
 
-Hold both buttons together to flip the screen.
+Hold both buttons together to flip the screen. In settings you can also switch between horizontal and vertical, and pick a theme.
+
+Press the power button to put the stick to sleep. Press the front button to wake it.
 
 Happy reading.
 )TXT";
