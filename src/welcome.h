@@ -19,7 +19,7 @@ To add books, choose "Add books" in the library. Join the Wi-Fi network shown on
 
 Hold both buttons together to flip the screen. In settings you can pick a theme.
 
-Press the power button to put the stick to sleep. Press the front button to wake it.
+To put the stick to sleep or power it off, open Settings. When it's asleep, press the front button to wake it.
 
 Happy reading.
 )TXT";

@@ -5,11 +5,12 @@
 //           playing: B faster, hold B slower
 //           paused:  B back a sentence, hold B forward a sentence
 // Settings: A on a setting to change it, then B up, hold B down, A done
-// Anywhere: hold A+B to flip the screen, power button to sleep (A or B wakes)
+// Anywhere: hold A+B to flip the screen. Settings has Sleep (A or B wakes) and Power off.
 #include <M5Unified.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 
 #include "library.h"
 #include "rsvp.h"
@@ -51,7 +52,7 @@ size_t chapterSelected = 0;
 
 // Settings
 enum SettingEntry : size_t {
-    kSetTheme, kSetBrightness, kSetSpeed, kSetTextSize, kSetBack, kSetCount
+    kSetTheme, kSetBrightness, kSetSpeed, kSetTextSize, kSetSleep, kSetPowerOff, kSetBack, kSetCount
 };
 size_t settingSelected = 0;
 bool editingSetting = false;
@@ -86,6 +87,9 @@ size_t settingsRow() { return books.size() + 1; }
 size_t libraryCount() { return books.size() + 2; }
 
 String titleOf(const String& name) { return name.endsWith(".txt") ? name.substring(0, name.length() - 4) : name; }
+
+void sleepNow();
+void powerOffNow();
 
 void step(size_t& index, size_t count, int direction) { index = (index + count + direction) % count; }
 
@@ -262,6 +266,8 @@ void drawSettings() {
         {"Brightness", String(brightness) + " of " + String(kMaxBrightness)},
         {"Reading speed", String(wpm) + " wpm"},
         {"Text size", ui::kTextSizes[textSize]},
+        {"Sleep", "A or B wakes"},
+        {"Power off", ""},
         {"Back", ""},
     };
     ui::drawMenu("Settings", editingSetting ? "B up  hold B down  A done" : "A change   hold A: back", items,
@@ -315,8 +321,17 @@ void onAClick() {
         mode = Mode::Reading;  // paused on the chapter's first word
         break;
     case Mode::Settings:
-        if (settingSelected == kSetBack) closeSettings();
-        else editingSetting = !editingSetting;
+        if (settingSelected == kSetBack) {
+            closeSettings();
+        } else if (settingSelected == kSetSleep) {
+            closeSettings();
+            sleepNow();
+        } else if (settingSelected == kSetPowerOff) {
+            closeSettings();
+            powerOffNow();
+        } else {
+            editingSetting = !editingSetting;
+        }
         break;
     case Mode::Upload: leaveUpload(); break;
     case Mode::Message: mode = messageReturn; break;
@@ -388,6 +403,19 @@ void flipScreen() {
     redraw = true;
 }
 
+// Cuts power on battery; the power button turns the stick back on.
+void powerOffNow() {
+    closeBook();
+    upload::end();
+    showMessage("Powering off", "Use the power button to turn it back on", mode);
+    draw();
+    delay(900);
+    M5.Display.setBrightness(0);
+    M5.Power.powerOff();
+    // Still running, so USB is keeping it powered: sleep instead of looking frozen.
+    sleepNow();
+}
+
 // Deep sleep until A or B is pressed. Waking restarts the firmware, which
 // reopens the book paused where you left off.
 void sleepNow() {
@@ -431,10 +459,6 @@ void handleInput(uint32_t now) {
     auto& a = M5.BtnA;
     auto& b = M5.BtnB;
 
-    if (M5.BtnPWR.wasClicked()) {
-        sleepNow();
-        return;
-    }
 
     if (a.wasPressed() || b.wasPressed()) {
         lastInputMs = now;
@@ -504,8 +528,8 @@ void setup() {
     Serial.begin(115200);
     // The press that woke the stick shouldn't also count as a button press.
     ignoreUntilRelease = wokeByButton;
-    Serial.printf("boot: wake cause %d, pins 0x%llx\n", static_cast<int>(esp_sleep_get_wakeup_cause()),
-                  static_cast<unsigned long long>(esp_sleep_get_ext1_wakeup_status()));
+    Serial.printf("boot: reset reason %d, wake cause %d\n", static_cast<int>(esp_reset_reason()),
+                  static_cast<int>(esp_sleep_get_wakeup_cause()));
 
     const bool storageOk = library::begin();
     flipped = library::flipped();
@@ -588,6 +612,7 @@ void loop() {
     }
 
     handleIdle(now);
+
 
     if (redraw) {
         redraw = false;
