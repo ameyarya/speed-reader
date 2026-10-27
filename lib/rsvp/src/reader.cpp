@@ -130,13 +130,13 @@ bool Reader::loadWordFrom(size_t start) {
 
 void Reader::buildDisplay() {
     const size_t remaining = word_.size() - chunk_;
-    if (remaining <= maxChunk_ + 2) {
+    if (remaining <= kMaxChunk + 2) {
         chunkLen_ = remaining;
         display_ = word_.substr(chunk_);
     } else {
         // Prefer splitting right after an existing hyphen.
-        size_t cut = maxChunk_ - 2;
-        const size_t hyphen = word_.rfind('-', chunk_ + maxChunk_ - 1);
+        size_t cut = kMaxChunk - 2;
+        const size_t hyphen = word_.rfind('-', chunk_ + kMaxChunk - 1);
         if (hyphen != std::string::npos && hyphen > chunk_ + 3) cut = hyphen + 1 - chunk_;
         chunkLen_ = cut;
         display_ = word_.substr(chunk_, cut);
@@ -217,11 +217,6 @@ int Reader::currentChapter() const {
 void Reader::goToChapter(size_t index) {
     if (index >= chapters_.size()) return;
     if (loadWordFrom(chapters_[index].position)) finished_ = false;
-}
-
-void Reader::setMaxChunk(size_t chars) {
-    maxChunk_ = std::max<size_t>(chars, 6);
-    if (!word_.empty()) buildDisplay();
 }
 
 void Reader::setWpm(int wpm) {

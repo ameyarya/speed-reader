@@ -34,8 +34,6 @@ void setLastBook(const String& name);
 uint16_t wpm();
 void setWpm(uint16_t wpm);
 
-bool portrait();
-void setPortrait(bool portrait);
 // Upside down (hold A+B to flip).
 bool flipped();
 void setFlipped(bool flipped);

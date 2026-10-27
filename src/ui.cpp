@@ -29,23 +29,15 @@ constexpr Theme kThemeTable[] = {
 uint16_t kBackground, kText, kDim, kHint, kFaint, kAccent, kSelected;
 bool kUnderlinePivot = false;
 
+// The stick is used sideways: 240x135.
 struct Layout {
     int w, h;
-    bool portrait;
     // Reader
     int anchorX, guideTop, guideBottom;
     // Lists
     int listTop, rowH, visibleRows;
 };
-Layout L{240, 135, false, 88, 30, 100, 26, 26, 4};
-
-void computeLayout(bool portrait) {
-    if (portrait) {
-        L = {135, 240, true, 52, 78, 146, 42, 28, 7};
-    } else {
-        L = {240, 135, false, 88, 30, 100, 26, 26, 4};
-    }
-}
+constexpr Layout L{240, 135, 88, 30, 100, 26, 26, 4};
 
 struct WordFont {
     const lgfx::IFont* font;
@@ -57,7 +49,6 @@ const WordFont kWordFonts[] = {
     {&fonts::FreeSansBold18pt7b, 25},
     {&fonts::FreeSansBold12pt7b, 17},
     {&fonts::FreeSansBold9pt7b, 13},
-    {&fonts::FreeSans9pt7b, 13},  // last resort for long words on the narrow screen
 };
 constexpr size_t kFontCount = sizeof(kWordFonts) / sizeof(kWordFonts[0]);
 size_t largestFont = 1;
@@ -113,9 +104,8 @@ void drawBattery(int right, int y) {
 }
 
 void drawGuides() {
-    const int margin = L.portrait ? 8 : 12;
-    canvas.drawFastHLine(margin, L.guideTop, L.w - 2 * margin, kFaint);
-    canvas.drawFastHLine(margin, L.guideBottom, L.w - 2 * margin, kFaint);
+    canvas.drawFastHLine(12, L.guideTop, L.w - 24, kFaint);
+    canvas.drawFastHLine(12, L.guideBottom, L.w - 24, kFaint);
     canvas.fillRect(L.anchorX - 1, L.guideTop, 2, 7, kAccent);
     canvas.fillRect(L.anchorX - 1, L.guideBottom - 6, 2, 7, kAccent);
 }
@@ -158,24 +148,16 @@ void drawSelectedRow(int y) {
     canvas.fillRect(4, y + 4, 3, L.rowH - 10, kAccent);
 }
 
-// Header for lists: title on the left, battery on the right, hint beside or below.
+// Header for lists: title on the left, then the hint, then the battery.
 void drawListHeader(const String& title, const String& hint, bool hintIsActive) {
     canvas.setFont(&fonts::Font2);
+    canvas.setTextDatum(textdatum_t::top_right);
+    canvas.setTextColor(hintIsActive ? kAccent : kHint);
+    canvas.drawString(hint, L.w - 30, 5);
+    const int hintW = canvas.textWidth(hint);
     canvas.setTextDatum(textdatum_t::top_left);
     canvas.setTextColor(kDim);
-    if (L.portrait) {
-        canvas.drawString(fitText(title, L.w - 40), 8, 5);
-        canvas.setTextColor(hintIsActive ? kAccent : kHint);
-        canvas.drawString(fitText(hint, L.w - 12), 8, 22);
-    } else {
-        canvas.setTextDatum(textdatum_t::top_right);
-        canvas.setTextColor(hintIsActive ? kAccent : kHint);
-        canvas.drawString(hint, L.w - 30, 5);
-        const int hintW = canvas.textWidth(hint);
-        canvas.setTextDatum(textdatum_t::top_left);
-        canvas.setTextColor(kDim);
-        canvas.drawString(fitText(title, L.w - 46 - hintW), 8, 5);
-    }
+    canvas.drawString(fitText(title, L.w - 46 - hintW), 8, 5);
     drawBattery(L.w - 4, 8);
 }
 
@@ -209,16 +191,10 @@ void begin() {
     applyTheme(0);
 }
 
-void setOrientation(bool isPortrait, bool flipped) {
-    computeLayout(isPortrait);
-    M5.Display.setRotation(isPortrait ? (flipped ? 2 : 0) : (flipped ? 3 : 1));
-    canvas.deleteSprite();
-    canvas.createSprite(L.w, L.h);
+void setFlipped(bool flipped) {
+    M5.Display.setRotation(flipped ? 3 : 1);
+    if (canvas.width() == 0) canvas.createSprite(L.w, L.h);
 }
-
-bool portrait() { return L.portrait; }
-
-size_t maxWordChunk() { return L.portrait ? 9 : rsvp::Reader::kMaxChunk; }
 
 void setTextSize(uint8_t size) {
     // Extra large starts at the 24pt font, Small at 9pt.
@@ -241,16 +217,10 @@ void drawReader(const rsvp::Reader& reader, const String& title) {
         String t = title;
         if (t.endsWith(".txt")) t.remove(t.length() - 4);
         const String stats = String(percent) + "%  " + String(reader.wpm()) + "wpm";
-        if (L.portrait) {
-            canvas.drawString(fitText(t, L.w - 36), 6, 8);
-            canvas.setTextColor(kHint);
-            canvas.drawString(stats, 6, 26);
-        } else {
-            canvas.setTextDatum(textdatum_t::top_right);
-            canvas.drawString(stats, L.w - 28, 8);
-            canvas.setTextDatum(textdatum_t::top_left);
-            canvas.drawString(fitText(t, L.w - 40 - canvas.textWidth(stats) - 6), 6, 8);
-        }
+        canvas.setTextDatum(textdatum_t::top_right);
+        canvas.drawString(stats, L.w - 28, 8);
+        canvas.setTextDatum(textdatum_t::top_left);
+        canvas.drawString(fitText(t, L.w - 40 - canvas.textWidth(stats) - 6), 6, 8);
         drawBattery(L.w - 4, 11);
     }
 
@@ -261,41 +231,20 @@ void drawReader(const rsvp::Reader& reader, const String& title) {
     canvas.setTextDatum(textdatum_t::bottom_center);
     if (!reader.playing()) {
         // Paused: show what the buttons do instead of stats.
-        if (reader.finished()) {
-            canvas.setTextColor(kAccent);
-            if (L.portrait) {
-                canvas.drawString("the end", L.w / 2, L.h - 26);
-                canvas.drawString("A: read again", L.w / 2, L.h - 8);
-            } else {
-                canvas.drawString("the end   A: read again", L.w / 2, L.h - 6);
-            }
-        } else if (L.portrait) {
-            canvas.setTextColor(kDim);
-            canvas.drawString("A  play", L.w / 2, L.h - 44);
-            canvas.drawString("B  back a sentence", L.w / 2, L.h - 26);
-            canvas.drawString("hold A  menu", L.w / 2, L.h - 8);
-        } else {
-            canvas.setTextColor(kDim);
-            canvas.drawString("A play   B back   hold A: menu", L.w / 2, L.h - 6);
-        }
+        canvas.setTextColor(reader.finished() ? kAccent : kDim);
+        canvas.drawString(reader.finished() ? "the end   A: read again" : "A play   B back   hold A: menu",
+                          L.w / 2, L.h - 6);
         canvas.pushSprite(0, 0);
         return;
     }
 
     canvas.setTextColor(kDim);
-    const String left = formatDuration(reader.secondsLeft()) + " left";
-    if (L.portrait) {
-        canvas.drawString(String(reader.wpm()) + " wpm", L.w / 2, L.h - 26);
-        canvas.setTextColor(kHint);
-        canvas.drawString(String(percent) + "%   " + left, L.w / 2, L.h - 8);
-    } else {
-        canvas.setTextDatum(textdatum_t::bottom_left);
-        canvas.drawString(String(reader.wpm()) + " wpm", 6, L.h - 6);
-        canvas.setTextDatum(textdatum_t::bottom_center);
-        canvas.drawString(String(percent) + "%", L.w / 2, L.h - 6);
-        canvas.setTextDatum(textdatum_t::bottom_right);
-        canvas.drawString(left, L.w - 6, L.h - 6);
-    }
+    canvas.setTextDatum(textdatum_t::bottom_left);
+    canvas.drawString(String(reader.wpm()) + " wpm", 6, L.h - 6);
+    canvas.setTextDatum(textdatum_t::bottom_center);
+    canvas.drawString(String(percent) + "%", L.w / 2, L.h - 6);
+    canvas.setTextDatum(textdatum_t::bottom_right);
+    canvas.drawString(formatDuration(reader.secondsLeft()) + " left", L.w - 6, L.h - 6);
     canvas.pushSprite(0, 0);
 }
 
@@ -370,16 +319,13 @@ void drawUpload(const String& ssid, const String& password, const String& url, b
 
     // Step 1 shows a Wi-Fi join code; once a phone is connected, a link to the page.
     const String code = phoneJoined ? url : "WIFI:T:WPA;S:" + ssid + ";P:" + password + ";;";
-    const int box = L.portrait ? 119 : 118;
-    const int boxX = L.portrait ? (L.w - box) / 2 : 4;
-    const int boxY = L.portrait ? 6 : 8;
-    canvas.fillRect(boxX, boxY, box, box, TFT_WHITE);
-    canvas.qrcode(code.c_str(), boxX + 5, boxY + 5, box - 10, 3);
+    canvas.fillRect(4, 8, 118, 118, TFT_WHITE);
+    canvas.qrcode(code.c_str(), 9, 13, 108, 3);
 
-    const int x = L.portrait ? 8 : 130;
+    const int x = 130;
     const int textW = L.w - x - 4;
     const int line = 17;
-    int y = L.portrait ? boxY + box + 6 : 8;
+    int y = 8;
 
     canvas.setTextDatum(textdatum_t::top_left);
     canvas.setFont(&fonts::FreeSansBold9pt7b);
@@ -398,12 +344,7 @@ void drawUpload(const String& ssid, const String& password, const String& url, b
         canvas.setTextColor(kDim);
         canvas.drawString("password", x, y);
         canvas.setTextColor(kText);
-        if (L.portrait) {
-            canvas.drawString(password, x + canvas.textWidth("password  "), y);
-        } else {
-            y += line - 2;
-            canvas.drawString(password, x, y);
-        }
+        canvas.drawString(password, x, y + line - 2);
     } else {
         canvas.setTextColor(kDim);
         canvas.drawString("2. Scan or open", x, y);
@@ -416,7 +357,7 @@ void drawUpload(const String& ssid, const String& password, const String& url, b
     }
 
     // The way out always stays visible, with the latest upload news above it.
-    const int bottom = L.portrait ? L.h - 4 : L.h - 6;
+    const int bottom = L.h - 6;
     canvas.setTextDatum(textdatum_t::bottom_left);
     if (!status.isEmpty()) {
         canvas.setTextColor(kAccent);
@@ -431,7 +372,7 @@ void drawMessage(const String& title, const String& body) {
     canvas.fillScreen(kBackground);
     canvas.setFont(&fonts::FreeSansBold12pt7b);
     canvas.setTextColor(kAccent);
-    int y = drawWrapped(title, L.w / 2, L.portrait ? 70 : 28, L.w - 16, 26);
+    int y = drawWrapped(title, L.w / 2, 28, L.w - 16, 26);
     canvas.setFont(&fonts::Font2);
     canvas.setTextColor(kDim);
     drawWrapped(body, L.w / 2, y + 8, L.w - 20, 18);

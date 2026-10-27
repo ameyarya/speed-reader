@@ -57,8 +57,6 @@ public:
     static constexpr uint16_t kMaxWpm = 1000;
     // Words longer than this are shown in hyphenated pieces so they fit on screen.
     static constexpr size_t kMaxChunk = 14;
-    // Narrow screens can use shorter pieces. Takes effect on the current word.
-    void setMaxChunk(size_t chars);
 
     // `data` must outlive the reader. `position` is a byte offset, usually one
     // returned earlier by position(); it is snapped to the start of its word.
@@ -122,7 +120,6 @@ private:
     std::string word_;      // normalized current word
     size_t chunk_ = 0;      // offset of the shown piece inside word_
     size_t chunkLen_ = 0;
-    size_t maxChunk_ = kMaxChunk;
     std::string display_;
     int pivot_ = 0;
 

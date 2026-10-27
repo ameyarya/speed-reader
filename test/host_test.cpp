@@ -125,12 +125,6 @@ static void testLongWordChunks() {
     }
     CHECK(pieces >= 3);
     CHECK(joined == "pneumonoultramicroscopicsilicovolcanoconiosis");
-
-    // Shorter pieces for a narrow screen.
-    r.open(text.data(), text.size(), 0);
-    r.setMaxChunk(9);
-    CHECK(r.display().size() <= 11);
-    CHECK(r.display().back() == '-');
 }
 
 static void testChapters() {

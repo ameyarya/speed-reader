@@ -51,7 +51,7 @@ size_t chapterSelected = 0;
 
 // Settings
 enum SettingEntry : size_t {
-    kSetTheme, kSetBrightness, kSetSpeed, kSetTextSize, kSetOrientation, kSetBack, kSetCount
+    kSetTheme, kSetBrightness, kSetSpeed, kSetTextSize, kSetBack, kSetCount
 };
 size_t settingSelected = 0;
 bool editingSetting = false;
@@ -60,7 +60,6 @@ Mode settingsReturn = Mode::Library;
 Mode messageReturn = Mode::Library;
 String messageTitle, messageBody;
 
-bool portrait = false;
 bool flipped = false;
 uint8_t theme = 0;
 uint8_t brightness = 3;
@@ -92,10 +91,6 @@ void step(size_t& index, size_t count, int direction) { index = (index + count +
 
 void applyBrightness() { M5.Display.setBrightness(kBrightnessLevels[brightness]); }
 
-void applyOrientation() {
-    ui::setOrientation(portrait, flipped);
-    reader.setMaxChunk(ui::maxWordChunk());
-}
 
 void refreshBooks() {
     books = library::list();
@@ -135,7 +130,6 @@ void openBook(const String& name) {
     }
     bookName = name;
     reader.setWpm(wpm);
-    reader.setMaxChunk(ui::maxWordChunk());
     reader.open(bookData, size, library::savedPosition(name));
     library::setLastBook(name);
     mode = Mode::Reading;
@@ -184,7 +178,6 @@ void closeSettings() {
     library::setWpm(wpm);
     library::setTextSize(textSize);
     library::setTheme(theme);
-    library::setPortrait(portrait);
     mode = settingsReturn;
     redraw = true;
 }
@@ -211,10 +204,6 @@ void changeSetting(int direction) {
     case kSetTheme:
         theme = static_cast<uint8_t>((theme + ui::kThemeCount + direction) % ui::kThemeCount);
         ui::setTheme(theme);
-        break;
-    case kSetOrientation:
-        portrait = !portrait;
-        applyOrientation();
         break;
     case kSetBrightness:
         brightness = static_cast<uint8_t>(std::clamp<int>(brightness + direction, 1, kMaxBrightness));
@@ -268,18 +257,15 @@ void drawChapters() {
 }
 
 void drawSettings() {
-    const bool narrow = ui::portrait();
     std::vector<ui::MenuItem> items = {
         {"Theme", ui::kThemes[theme]},
         {"Brightness", String(brightness) + " of " + String(kMaxBrightness)},
-        {narrow ? "Speed" : "Reading speed", String(wpm) + " wpm"},
+        {"Reading speed", String(wpm) + " wpm"},
         {"Text size", ui::kTextSizes[textSize]},
-        {"Orientation", portrait ? "Vertical" : "Horizontal"},
         {"Back", ""},
     };
-    const char* hint = editingSetting ? (narrow ? "B up  hold B down" : "B up  hold B down  A done")
-                                      : (narrow ? "A change  hold A back" : "A change   hold A: back");
-    ui::drawMenu("Settings", hint, items, settingSelected, editingSetting);
+    ui::drawMenu("Settings", editingSetting ? "B up  hold B down  A done" : "A change   hold A: back", items,
+                 settingSelected, editingSetting);
 }
 
 void draw() {
@@ -398,7 +384,7 @@ void onBHoldRepeat() {
 void flipScreen() {
     flipped = !flipped;
     library::setFlipped(flipped);
-    applyOrientation();
+    ui::setFlipped(flipped);
     redraw = true;
 }
 
@@ -426,10 +412,17 @@ void sleepNow() {
     gpio_hold_en(kBacklightPin);
     gpio_deep_sleep_hold_en();
 
+    // The buttons pull their pins low when pressed. Keep the pins pulled up while
+    // asleep (that needs the RTC peripherals powered) so they don't float and wake us.
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
     for (gpio_num_t pin : {kButtonAPin, kButtonBPin}) {
+        rtc_gpio_init(pin);
+        rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
         rtc_gpio_pullup_en(pin);
         rtc_gpio_pulldown_dis(pin);
     }
+    Serial.printf("sleep: A=%d B=%d\n", rtc_gpio_get_level(kButtonAPin), rtc_gpio_get_level(kButtonBPin));
+    Serial.flush();
     esp_sleep_enable_ext1_wakeup_io((1ULL << kButtonAPin) | (1ULL << kButtonBPin), ESP_EXT1_WAKEUP_ANY_LOW);
     esp_deep_sleep_start();
 }
@@ -511,9 +504,10 @@ void setup() {
     Serial.begin(115200);
     // The press that woke the stick shouldn't also count as a button press.
     ignoreUntilRelease = wokeByButton;
+    Serial.printf("boot: wake cause %d, pins 0x%llx\n", static_cast<int>(esp_sleep_get_wakeup_cause()),
+                  static_cast<unsigned long long>(esp_sleep_get_ext1_wakeup_status()));
 
     const bool storageOk = library::begin();
-    portrait = library::portrait();
     flipped = library::flipped();
     theme = std::min<uint8_t>(library::theme(), ui::kThemeCount - 1);
     brightness = std::clamp<uint8_t>(library::brightness(), 1, kMaxBrightness);
@@ -523,7 +517,7 @@ void setup() {
     ui::begin();
     ui::setTheme(theme);
     ui::setTextSize(textSize);
-    applyOrientation();
+    ui::setFlipped(flipped);
     lastInputMs = millis();
 
     if (!storageOk) {
@@ -546,6 +540,18 @@ void setup() {
 void loop() {
     M5.update();
     const uint32_t now = millis();
+    // Typing "sleep" on the serial port does the same as the power button (for testing).
+    if (Serial.available()) {
+        static String command;
+        const char c = Serial.read();
+        if (c == '\n') {
+            command.trim();
+            if (command == "sleep") sleepNow();
+            command = "";
+        } else if (command.length() < 16) {
+            command += c;
+        }
+    }
     handleInput(now);
 
     switch (mode) {

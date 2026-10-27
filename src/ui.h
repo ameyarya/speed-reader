@@ -1,5 +1,4 @@
 // Screens, drawn into an off-screen canvas and pushed in one go to avoid flicker.
-// Every screen lays itself out for both landscape (240x135) and portrait (135x240).
 #pragma once
 
 #include <Arduino.h>
@@ -26,12 +25,10 @@ struct LibraryItem {
 };
 
 void begin();
-void setOrientation(bool portrait, bool flipped);
-bool portrait();
+// Upside down or not (hold A+B to flip).
+void setFlipped(bool flipped);
 void setTextSize(uint8_t size);
 void setTheme(uint8_t theme);
-// Longest piece of a word the reader should show at once on this screen.
-size_t maxWordChunk();
 
 void drawReader(const rsvp::Reader& reader, const String& title);
 void drawLibrary(const std::vector<LibraryItem>& items, size_t selected);

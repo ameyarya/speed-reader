@@ -130,9 +130,6 @@ void setWpm(uint16_t wpm) {
     if (settings.getUShort("wpm", 0) != wpm) settings.putUShort("wpm", wpm);
 }
 
-bool portrait() { return settings.getBool("portrait", false); }
-void setPortrait(bool portrait) { settings.putBool("portrait", portrait); }
-
 // Older firmware stored a display rotation, where 3 meant flipped landscape.
 bool flipped() { return settings.getBool("flipped", settings.getUChar("rot", 1) == 3); }
 void setFlipped(bool flipped) { settings.putBool("flipped", flipped); }
